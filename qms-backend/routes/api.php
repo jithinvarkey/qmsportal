@@ -339,22 +339,25 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── MODULE 8: VENDORS & CONTRACTS ────────────────────────────────────────
     Route::prefix('vendors')->group(function () {
-        Route::get('/',                    [VendorController::class, 'index']);
-        Route::post('/',                   [VendorController::class, 'store']);
-        Route::get('/stats',               [VendorController::class, 'stats']);
-        Route::get('/categories',          [VendorController::class, 'categories']);
-        Route::get('/expiring-contracts',  [VendorController::class, 'expiringContracts']);
-        Route::get('/list',                [VendorController::class, 'listDropdown']);  // dropdown
-        Route::get('/users',               [VendorController::class, 'users']);          // owner dropdown
-        Route::get('/{id}',                [VendorController::class, 'show']);
-        Route::put('/{id}',                [VendorController::class, 'update']);
-        Route::delete('/{id}',             [VendorController::class, 'destroy']);
-        Route::post('/{id}/qualify',       [VendorController::class, 'qualify']);
-        Route::post('/{id}/suspend',       [VendorController::class, 'suspend']);
-        Route::get('/{id}/evaluations',    [VendorController::class, 'evaluations']);
-        Route::post('/{id}/evaluations',   [VendorController::class, 'addEvaluation']);
-        Route::get('/{id}/contracts',      [VendorController::class, 'contracts']);
-        Route::post('/{id}/contracts',     [VendorController::class, 'addContract']);
+       
+    Route::get('/stats',               [VendorController::class, 'stats']);
+    Route::get('/categories',          [VendorController::class, 'categories']);
+    Route::get('/dropdown',            [VendorController::class, 'listDropdown']);   // ← NEW
+    Route::get('/expiring-contracts',  [VendorController::class, 'expiringContracts']);
+
+    // ── Resource routes (with {id}) — AFTER all static routes ─────────
+    Route::get('/',                    [VendorController::class, 'index']);
+    Route::post('/',                   [VendorController::class, 'store']);
+    Route::get('/{id}',               [VendorController::class, 'show']);
+    Route::put('/{id}',               [VendorController::class, 'update']);
+    Route::delete('/{id}',            [VendorController::class, 'destroy']);
+    Route::post('/{id}/qualify',       [VendorController::class, 'qualify']);
+    Route::post('/{id}/suspend',       [VendorController::class, 'suspend']);
+    Route::post('/{id}/reactivate',    [VendorController::class, 'reactivate']);    // ← BONUS
+    Route::get('/{id}/evaluations',    [VendorController::class, 'evaluations']);
+    Route::post('/{id}/evaluations',   [VendorController::class, 'addEvaluation']);
+    Route::get('/{id}/contracts',      [VendorController::class, 'contracts']);
+    Route::post('/{id}/contracts',     [VendorController::class, 'addContract']);
     });
 
     Route::prefix('partnerships')->group(function () {
