@@ -473,17 +473,17 @@ import { LanguageService } from '../../../core/services/language.service';
   `]
 })
 export class PartnershipListComponent implements OnInit, OnDestroy {
-  items      = signal<any[]>([]);
-  loading    = signal(true);
-  total      = signal(0);
-  page       = signal(1);
+  items = signal<any[]>([]);
+  loading = signal(true);
+  total = signal(0);
+  page = signal(1);
   totalPages = signal(1);
   statsCards = signal<any[]>([]);
-  expiring   = signal<any[]>([]);
-  vendors    = signal<any[]>([]);
-  users      = signal<any[]>([]);
-  detail     = signal<any>(null);
-  renewTarget= signal<any>(null);
+  expiring = signal<any[]>([]);
+  vendors = signal<any[]>([]);
+  users = signal<any[]>([]);
+  detail = signal<any>(null);
+  renewTarget = signal<any>(null);
   confirmTerminateId: number | null = null;
 
   search = ''; filterStatus = ''; filterType = '';
@@ -501,29 +501,29 @@ export class PartnershipListComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
   private searchTimer: any;
 
-  constructor(private svc: VendorService, private uiEvents: UiEventService, public lang: LanguageService, public auth: AuthService) {}
+  constructor(private svc: VendorService, private uiEvents: UiEventService, public lang: LanguageService, public auth: AuthService) { }
 
 
   private slug = () => (this.auth.currentUser() as any)?.role?.slug ?? '';
-  canCreate     = () => ['super_admin','qa_manager','compliance_manager'].includes(this.slug());
-  canEdit       = () => ['super_admin','qa_manager','compliance_manager'].includes(this.slug());
-  canTerminate  = () => ['super_admin','qa_manager'].includes(this.slug());
+  canCreate = () => ['super_admin', 'qa_manager', 'compliance_manager'].includes(this.slug());
+  canEdit = () => ['super_admin', 'qa_manager', 'compliance_manager'].includes(this.slug());
+  canTerminate = () => ['super_admin', 'qa_manager'].includes(this.slug());
 
   ngOnInit() {
     this.uiEvents.openNewForm$.pipe(takeUntil(this.destroy$)).subscribe(() => this.openCreate());
     this.load();
     this.loadStats();
-    this.svc.vendorsList().subscribe({ next: (r: any) => this.vendors.set(r || []) });
-    this.svc.users().subscribe({ next: (r: any) => this.users.set(r || []) });
-    this.svc.expiringContracts().subscribe({ next: (r: any) => this.expiring.set(r || []) });
+    this.svc.vendorsList().subscribe({ next: (r: any) => this.vendors.set(r.data ?? []) });
+    this.svc.users().subscribe({ next: (r: any) => this.users.set(r.data ?? []) });
+    this.svc.expiringContracts().subscribe({ next: (r: any) => this.expiring.set(r.data ?? []) });
   }
 
   load() {
     this.loading.set(true);
     const p: any = { page: this.page(), per_page: 15 };
     if (this.filterStatus) p.status = this.filterStatus;
-    if (this.filterType)   p.type   = this.filterType;
-    if (this.search)       p.search = this.search;
+    if (this.filterType) p.type = this.filterType;
+    if (this.search) p.search = this.search;
     this.svc.listContracts(p).subscribe({
       next: (r: any) => {
         this.items.set(r.data || []);
@@ -543,13 +543,13 @@ export class PartnershipListComponent implements OnInit, OnDestroy {
   loadStats() {
     this.svc.contractStats().subscribe({
       next: (s: any) => this.statsCards.set([
-        { label: 'Total',      value: s.total    ?? 0, color: 'var(--text1)' },
-        { label: 'Active',     value: s.active   ?? 0, color: '#10b981' },
-        { label: 'Draft',      value: s.draft    ?? 0, color: 'var(--text3)' },
-        { label: 'Expiring',   value: s.expiring ?? 0, color: '#f59e0b' },
-        { label: 'Expired',    value: s.expired  ?? 0, color: 'var(--danger)' },
+        { label: 'Total', value: s.total ?? 0, color: 'var(--text1)' },
+        { label: 'Active', value: s.active ?? 0, color: '#10b981' },
+        { label: 'Draft', value: s.draft ?? 0, color: 'var(--text3)' },
+        { label: 'Expiring', value: s.expiring ?? 0, color: '#f59e0b' },
+        { label: 'Expired', value: s.expired ?? 0, color: 'var(--danger)' },
       ]),
-      error: () => {}
+      error: () => { }
     });
   }
 
@@ -575,14 +575,14 @@ export class PartnershipListComponent implements OnInit, OnDestroy {
   }
 
   submit() {
-    if (!this.form.title.trim())   { this.formError.set('Title is required.'); return; }
-    if (!this.form.vendor_id)      { this.formError.set('Vendor is required.'); return; }
-    if (!this.form.start_date)     { this.formError.set('Start date is required.'); return; }
+    if (!this.form.title.trim()) { this.formError.set('Title is required.'); return; }
+    if (!this.form.vendor_id) { this.formError.set('Vendor is required.'); return; }
+    if (!this.form.start_date) { this.formError.set('Start date is required.'); return; }
     this.saving.set(true); this.formError.set('');
     const payload = { ...this.form };
-    if (!payload.value)       delete payload.value;
-    if (!payload.end_date)    delete payload.end_date;
-    if (!payload.owner_id)    delete payload.owner_id;
+    if (!payload.value) delete payload.value;
+    if (!payload.end_date) delete payload.end_date;
+    if (!payload.owner_id) delete payload.owner_id;
     const call = this.editId ? this.svc.updateContract(this.editId, payload) : this.svc.createContract(payload);
     call.subscribe({
       next: (r: any) => {
@@ -599,12 +599,12 @@ export class PartnershipListComponent implements OnInit, OnDestroy {
   }
 
   openDetail(c: any) {
-    this.svc.getContract(c.id).subscribe({ next: (r: any) => this.detail.set(r) });
+    this.svc.getContract(c.id).subscribe({ next: (r: any) => this.detail.set(r.data ?? []) });
   }
 
   activate(c: any) {
     this.svc.activateContract(c.id).subscribe({
-      next: (r: any) => { this.detail.set(r); this.load(); this.loadStats(); }
+      next: (r: any) => { this.detail.set(r.data ?? []); this.load(); this.loadStats(); }
     });
   }
 
@@ -615,7 +615,7 @@ export class PartnershipListComponent implements OnInit, OnDestroy {
     }
     this.confirmTerminateId = null;     // second click: confirmed
     this.svc.terminateContract(c.id).subscribe({
-      next: (r: any) => { this.detail.set(r); this.load(); this.loadStats(); this.showToast('Contract terminated', 'success'); },
+      next: (r: any) => { this.detail.set(r.data ?? []); this.load(); this.loadStats(); this.showToast('Contract terminated', 'success'); },
       error: (e: any) => this.showToast(e?.error?.message || 'Failed to terminate', 'error')
     });
   }
@@ -637,10 +637,14 @@ export class PartnershipListComponent implements OnInit, OnDestroy {
       start_date: this.renewForm.start_date, end_date: this.renewForm.end_date,
     };
     if (this.renewForm.value) payload.value = this.renewForm.value;
-    this.svc.createContract(payload).subscribe({
-      next: () => {
-        this.saving.set(false); this.showRenewForm = false;
+    this.svc.reactivateContract(c.id, payload).subscribe({
+      next: (r: any) => {
+        this.saving.set(false);
+        this.showRenewForm = false;
+        this.detail.set(r.data ?? []);
         this.load(); this.loadStats();
+
+        this.showToast(r?.message, 'success');
       },
       error: () => { this.saving.set(false); }
     });
@@ -680,7 +684,7 @@ export class PartnershipListComponent implements OnInit, OnDestroy {
     return { active: 'badge-green', draft: 'badge-draft', expired: 'badge-red', terminated: 'badge-red', suspended: 'badge-yellow' }[s] || 'badge-draft';
   }
 
-  toast = signal<{msg:string,type:string}|null>(null);
+  toast = signal<{ msg: string, type: string } | null>(null);
   showToast(msg: string, type: string): void {
     this.toast.set({ msg, type });
     setTimeout(() => this.toast.set(null), 3500);

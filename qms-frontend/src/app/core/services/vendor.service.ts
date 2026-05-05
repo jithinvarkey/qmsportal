@@ -196,4 +196,12 @@ export class VendorService {
   updatePartnership(id: number, data: any): Observable<any> {
     return this.api.put(`/partnerships/${id}`, data);
   }
+/**
+   * Reactivate a contract a contract (set status → terminated).
+   * FIX: was calling /contracts/:id/terminate — correct path is /vendors/contracts/:id/terminate.
+   */
+  reactivateContract(id: number, data: any): Observable<any> {
+    return this.api.post(`/vendors/contracts/${id}/renew`, data);
+  }
+
 }
