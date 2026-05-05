@@ -319,6 +319,7 @@ export class VendorDetailComponent implements OnInit, OnDestroy {
     this.svc.get(this.id).pipe(takeUntil(this.destroy$)).subscribe({
       next: r => {
         this.vendor.set(r.data ?? r);
+        console.log('loading');
         this.loading.set(false);
         this.svc.getEvaluations(this.id).pipe(takeUntil(this.destroy$)).subscribe({ next: e => this.evaluations.set(e.data ?? e) });
         this.svc.getContracts(this.id).pipe(takeUntil(this.destroy$)).subscribe({ next: c => this.contracts.set(c.data ?? c) });
