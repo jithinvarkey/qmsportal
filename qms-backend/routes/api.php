@@ -369,6 +369,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/evaluations',   [VendorController::class, 'addEvaluation']);
         Route::get('/{id}/contracts',      [VendorController::class, 'contracts']);
         Route::post('/{id}/contracts',     [VendorController::class, 'addContract']);
+        
+        Route::post('/contracts/{id}/activate',  [VendorController::class, 'activateContract']);
+        Route::post('/contracts/{id}/terminate', [VendorController::class, 'terminateContract']);
+        Route::post('/contracts/{id}/renew',     [VendorController::class, 'renewContract']); 
     
     
     

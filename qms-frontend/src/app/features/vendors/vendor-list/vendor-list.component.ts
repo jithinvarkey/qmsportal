@@ -319,20 +319,72 @@ import { LanguageService } from '../../../core/services/language.service';
               <div class="detail-section">
                 <div class="detail-section-title">Quick Actions</div>
                 <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
+
                   @if (detail()!.qualification_status !== 'qualified' && canQualify()) {
-                    <button class="btn btn-sm" style="background:#10b981;color:#fff;justify-content:center" (click)="qualify(detail()!)">
-                      <i class="fas fa-certificate"></i> Qualify Vendor
+                    <button class="btn btn-sm" style="background:#10b981;color:#fff;justify-content:center"
+                            (click)="showQualifyForm=!showQualifyForm;showSuspendForm=false">
+                      <i class="fas fa-certificate"></i> {{ showQualifyForm ? 'Cancel Qualification' : 'Qualify Vendor' }}
                     </button>
                   }
+
+                  <!-- Inline Qualify Form -->
+                  @if (showQualifyForm && detail()!.qualification_status !== 'qualified') {
+                    <div class="inline-form-card" style="border:1px solid #10b981;background:rgba(16,185,129,0.05)">
+                      <div class="form-section-title" style="color:#10b981">Qualification Details</div>
+                      <div class="form-group">
+                        <label class="form-label">Qualification Date *</label>
+                        <input type="date" class="form-control" [(ngModel)]="qualifyForm.qualification_date" [max]="today">
+                      </div>
+                      <div class="form-group" style="margin-top:8px">
+                        <label class="form-label">Expiry Date <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+                        <input type="date" class="form-control" [(ngModel)]="qualifyForm.qualification_expiry" [min]="qualifyForm.qualification_date">
+                      </div>
+                      <div class="form-group" style="margin-top:8px">
+                        <label class="form-label">Notes <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+                        <textarea class="form-control" rows="2" [(ngModel)]="qualifyForm.notes" placeholder="Certification ref, audit number…" maxlength="1000"></textarea>
+                      </div>
+                      @if (qualifyError()) { <div class="alert-error" style="margin-top:8px">{{ qualifyError() }}</div> }
+                      <div style="display:flex;gap:8px;margin-top:10px">
+                        <button class="btn btn-sm" style="background:#10b981;color:#fff" (click)="submitQualify()" [disabled]="savingQualify()">
+                          <i class="fas fa-check"></i> {{ savingQualify() ? 'Qualifying…' : 'Confirm' }}
+                        </button>
+                        <button class="btn btn-secondary btn-sm" (click)="showQualifyForm=false">Cancel</button>
+                      </div>
+                    </div>
+                  }
+
                   @if (detail()!.status !== 'suspended' && canQualify()) {
-                    <button class="btn btn-secondary btn-sm" style="color:var(--danger);border-color:var(--danger)" (click)="suspendVendor(detail()!)">
-                      <i class="fas fa-ban"></i> Suspend Vendor
+                    <button class="btn btn-secondary btn-sm" style="color:var(--danger);border-color:var(--danger)"
+                            (click)="showSuspendForm=!showSuspendForm;showQualifyForm=false">
+                      <i class="fas fa-ban"></i> {{ showSuspendForm ? 'Cancel Suspension' : 'Suspend Vendor' }}
                     </button>
-                  } @else {
+                  } @else if (detail()!.status === 'suspended') {
                     <button class="btn btn-secondary btn-sm" (click)="reactivateVendor(detail()!)">
                       <i class="fas fa-check"></i> Reactivate Vendor
                     </button>
                   }
+
+                  <!-- Inline Suspend Form -->
+                  @if (showSuspendForm && detail()!.status !== 'suspended') {
+                    <div class="inline-form-card" style="border:1px solid var(--danger);background:rgba(239,68,68,0.05)">
+                      <div class="form-section-title" style="color:var(--danger)">Suspension Reason</div>
+                      <div class="form-group">
+                        <label class="form-label">Reason *</label>
+                        <textarea class="form-control" rows="3" [(ngModel)]="suspendForm.reason"
+                                  placeholder="Describe why this vendor is being suspended…"
+                                  maxlength="1000"></textarea>
+                        <div style="font-size:11px;color:var(--text3);text-align:right;margin-top:2px">{{ suspendForm.reason.length }}/1000</div>
+                      </div>
+                      @if (suspendError()) { <div class="alert-error" style="margin-top:8px">{{ suspendError() }}</div> }
+                      <div style="display:flex;gap:8px;margin-top:10px">
+                        <button class="btn btn-sm" style="background:var(--danger);color:#fff" (click)="submitSuspend()" [disabled]="savingSuspend()">
+                          <i class="fas fa-ban"></i> {{ savingSuspend() ? 'Suspending…' : 'Confirm Suspension' }}
+                        </button>
+                        <button class="btn btn-secondary btn-sm" (click)="showSuspendForm=false">Cancel</button>
+                      </div>
+                    </div>
+                  }
+
                   <button class="btn btn-secondary btn-sm" (click)="activeTab='contracts';loadVendorContracts();openAddContract=true">
                     <i class="fas fa-file-contract"></i> Add Contract
                   </button>
@@ -589,6 +641,17 @@ export class VendorListComponent implements OnInit, OnDestroy {
   savingEval = signal(false);
   evalError = signal('');
 
+  // ── Qualify & Suspend inline forms ───────────────────────────────────────────
+  showQualifyForm = false;
+  showSuspendForm = false;
+  savingQualify   = signal(false);
+  savingSuspend   = signal(false);
+  qualifyError    = signal('');
+  suspendError    = signal('');
+  readonly today  = new Date().toISOString().split('T')[0];
+  qualifyForm: any = { qualification_date: new Date().toISOString().split('T')[0], qualification_expiry: '', notes: '' };
+  suspendForm: any = { reason: '' };
+
   form: any = { name: '', type: 'service_provider', category_id: '', risk_level: 'low', status: 'prospect', country: '', website: '', registration_no: '', tax_no: '', contact_name: '', contact_email: '', contact_phone: '', address: '' };
   contractForm: any = { contract_no: '',title: '', type: 'service', value: '', currency: 'SAR', start_date: '', end_date: '' };
   evalForm: any = { evaluation_date: '', period: '', quality_score: '', delivery_score: '', price_score: '', service_score: '', compliance_score: '', comments: '', recommendations: '' };
@@ -679,28 +742,68 @@ export class VendorListComponent implements OnInit, OnDestroy {
 
   openDetail(v: any) {
     this.svc.get(v.id).subscribe({
-      next: (r: any) => { this.detail.set(r); this.activeTab = 'overview'; this.vendorContracts.set([]); this.evaluations.set([]); this.openAddContract = false; this.showEvalForm = false; }
+      next: (r: any) => { this.detail.set(r.data ??[]); this.activeTab = 'overview'; this.vendorContracts.set([]); this.evaluations.set([]); this.openAddContract = false; this.showEvalForm = false; this.showQualifyForm = false; this.showSuspendForm = false; this.qualifyError.set(''); this.suspendError.set(''); }
     });
   }
 
   qualify(v: any) {
-    console.log(v);
-    this.svc.qualify(v?.data?.id).subscribe({
-      next: (r: any) => { this.detail.set(r); this.load(); this.loadStats(); this.showToast('Vendor qualified', 'success'); },
-      error: (e: any) => this.showToast(e?.error?.message || 'Failed to qualify vendor', 'error')
+    this.showQualifyForm = !this.showQualifyForm;
+    this.showSuspendForm = false;
+    this.qualifyForm = { qualification_date: this.today, qualification_expiry: '', notes: '' };
+    this.qualifyError.set('');
+  }
+
+  submitQualify() {
+    if (!this.qualifyForm.qualification_date) { this.qualifyError.set('Qualification date is required.'); return; }
+    const v = this.detail(); if (!v) return;
+    const id = v?.data?.id ?? v?.id;
+    this.savingQualify.set(true); this.qualifyError.set('');
+    const payload: any = { qualification_date: this.qualifyForm.qualification_date, notes: this.qualifyForm.notes || null };
+    if (this.qualifyForm.qualification_expiry) payload.qualification_expiry = this.qualifyForm.qualification_expiry;
+    this.svc.qualify(id, payload).subscribe({
+      next: (r: any) => {
+        this.savingQualify.set(false); this.showQualifyForm = false;
+        this.detail.set(r.data??[]); this.load(); this.loadStats();
+        this.showToast('Vendor qualified successfully', 'success');
+      },
+      error: (e: any) => {
+        this.savingQualify.set(false);
+        this.qualifyError.set(e?.error?.message || Object.values(e?.error?.errors || {}).flat().join(', ') || 'Failed to qualify vendor.');
+      }
     });
   }
 
   suspendVendor(v: any) {
-    
-    this.svc.suspend(v?.data?.id).subscribe({
-      next: (r: any) => { this.detail.set(r); this.load(); this.loadStats(); this.showToast('Vendor suspended', 'success'); },
-      error: (e: any) => this.showToast(e?.error?.message || 'Failed to suspend vendor', 'error')
+    this.showSuspendForm = !this.showSuspendForm;
+    this.showQualifyForm = false;
+    this.suspendForm = { reason: '' };
+    this.suspendError.set('');
+  }
+
+  submitSuspend() {
+    if (!this.suspendForm.reason.trim() || this.suspendForm.reason.trim().length < 10) {
+      this.suspendError.set('Please provide a reason (at least 10 characters).');
+      return;
+    }
+    const v = this.detail(); if (!v) return;
+    const id = v?.data?.id ?? v?.id;
+    this.savingSuspend.set(true); this.suspendError.set('');
+    this.svc.suspend(id, { reason: this.suspendForm.reason }).subscribe({
+      next: (r: any) => {
+        this.savingSuspend.set(false); this.showSuspendForm = false;
+        this.detail.set(r.data??[]); this.load(); this.loadStats();
+        this.showToast('Vendor suspended', 'success');
+      },
+      error: (e: any) => {
+        this.savingSuspend.set(false);
+        this.suspendError.set(e?.error?.message || 'Failed to suspend vendor.');
+      }
     });
   }
 
   reactivateVendor(v: any) {
-    this.svc.update(v?.data?.id, { status: 'active' }).subscribe({ next: (r: any) => { this.detail.set(r); this.load(); this.loadStats(); } });
+    console.log(v);
+    this.svc.update(v.id, { status: 'active' }).subscribe({ next: (r: any) => { this.detail.set(r.data??[]); this.load(); this.loadStats(); } });
   }
 
   loadVendorContracts() {
