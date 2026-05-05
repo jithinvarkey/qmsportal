@@ -363,6 +363,10 @@ import { LanguageService } from '../../../core/services/language.service';
                   <input class="form-control" [(ngModel)]="contractForm.title" placeholder="Contract title">
                 </div>
                 <div class="form-group">
+                  <label class="form-label">Contract number</label>
+                  <input type="text" class="form-control" [(ngModel)]="contractForm.contract_no" placeholder="Enter contract number">
+                </div>
+                <div class="form-group">
                   <label class="form-label">Type *</label>
                   <select class="form-control" [(ngModel)]="contractForm.type">
                     <option value="service">Service</option><option value="supply">Supply</option>
@@ -561,32 +565,32 @@ import { LanguageService } from '../../../core/services/language.service';
   `]
 })
 export class VendorListComponent implements OnInit, OnDestroy {
-  items      = signal<any[]>([]);
-  loading    = signal(true);
-  total      = signal(0);
-  page       = signal(1);
+  items = signal<any[]>([]);
+  loading = signal(true);
+  total = signal(0);
+  page = signal(1);
   totalPages = signal(1);
   statsCards = signal<any[]>([]);
   categories = signal<any[]>([]);
-  detail     = signal<any>(null);
+  detail = signal<any>(null);
   vendorContracts = signal<any[]>([]);
-  evaluations     = signal<any[]>([]);
-  loadingContracts= signal(false);
-  loadingEvals    = signal(false);
+  evaluations = signal<any[]>([]);
+  loadingContracts = signal(false);
+  loadingEvals = signal(false);
 
   search = ''; filterStatus = ''; filterRisk = '';
   showForm = false; saving = signal(false); formError = signal('');
   editId: number | null = null;
   activeTab = 'overview';
   openAddContract = false;
-  showEvalForm    = false;
-  savingContract  = signal(false);
-  contractError   = signal('');
-  savingEval      = signal(false);
-  evalError       = signal('');
+  showEvalForm = false;
+  savingContract = signal(false);
+  contractError = signal('');
+  savingEval = signal(false);
+  evalError = signal('');
 
   form: any = { name: '', type: 'service_provider', category_id: '', risk_level: 'low', status: 'prospect', country: '', website: '', registration_no: '', tax_no: '', contact_name: '', contact_email: '', contact_phone: '', address: '' };
-  contractForm: any = { title: '', type: 'service', value: '', currency: 'SAR', start_date: '', end_date: '' };
+  contractForm: any = { contract_no: '',title: '', type: 'service', value: '', currency: 'SAR', start_date: '', end_date: '' };
   evalForm: any = { evaluation_date: '', period: '', quality_score: '', delivery_score: '', price_score: '', service_score: '', compliance_score: '', comments: '', recommendations: '' };
   scoreFields = [
     { key: 'quality_score', label: 'Quality' },
@@ -599,27 +603,31 @@ export class VendorListComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
   private searchTimer: any;
 
-  constructor(private svc: VendorService, private uiEvents: UiEventService, public lang: LanguageService, public auth: AuthService) {}
+  constructor(private svc: VendorService, private uiEvents: UiEventService, public lang: LanguageService, public auth: AuthService) { }
 
 
   private slug = () => (this.auth.currentUser() as any)?.role?.slug ?? '';
-  canCreate  = () => ['super_admin','qa_manager','compliance_manager'].includes(this.slug());
-  canEdit    = () => ['super_admin','qa_manager','compliance_manager'].includes(this.slug());
-  canQualify = () => ['super_admin','qa_manager'].includes(this.slug());
+  canCreate = () => ['super_admin', 'qa_manager', 'compliance_manager'].includes(this.slug());
+  canEdit = () => ['super_admin', 'qa_manager', 'compliance_manager'].includes(this.slug());
+  canQualify = () => ['super_admin', 'qa_manager'].includes(this.slug());
 
   ngOnInit() {
     this.uiEvents.openNewForm$.pipe(takeUntil(this.destroy$)).subscribe(() => this.openCreate());
     this.load();
     this.loadStats();
-    this.svc.categories().subscribe({ next: (r: any) => this.categories.set(r || []) });
+    this.svc.categories().subscribe({
+      next: (r: any) => {
+        this.categories.set(r.data ?? []);
+      }
+    });
   }
 
   load() {
     this.loading.set(true);
     const p: any = { page: this.page() };
-    if (this.filterStatus) p.status     = this.filterStatus;
-    if (this.filterRisk)   p.risk_level = this.filterRisk;
-    if (this.search)       p.search     = this.search;
+    if (this.filterStatus) p.status = this.filterStatus;
+    if (this.filterRisk) p.risk_level = this.filterRisk;
+    if (this.search) p.search = this.search;
     this.svc.list(p).subscribe({
       next: (r: any) => { this.items.set(r.data || []); this.total.set(r.total || 0); this.totalPages.set(r.last_page || 1); this.loading.set(false); },
       error: () => this.loading.set(false)
@@ -631,13 +639,13 @@ export class VendorListComponent implements OnInit, OnDestroy {
   loadStats() {
     this.svc.stats().subscribe({
       next: (s: any) => this.statsCards.set([
-        { label: 'Total',     value: s.total     ?? 0, color: 'var(--text1)' },
-        { label: 'Active',    value: s.active    ?? 0, color: '#10b981' },
+        { label: 'Total', value: s.total ?? 0, color: 'var(--text1)' },
+        { label: 'Active', value: s.active ?? 0, color: '#10b981' },
         { label: 'Qualified', value: s.qualified ?? 0, color: 'var(--accent)' },
         { label: 'High Risk', value: s.high_risk ?? 0, color: '#ef4444' },
         { label: 'Suspended', value: s.suspended ?? 0, color: '#f59e0b' },
       ]),
-      error: () => {}
+      error: () => { }
     });
   }
 
@@ -676,65 +684,82 @@ export class VendorListComponent implements OnInit, OnDestroy {
   }
 
   qualify(v: any) {
-    this.svc.qualify(v.id).subscribe({
+    console.log(v);
+    this.svc.qualify(v?.data?.id).subscribe({
       next: (r: any) => { this.detail.set(r); this.load(); this.loadStats(); this.showToast('Vendor qualified', 'success'); },
       error: (e: any) => this.showToast(e?.error?.message || 'Failed to qualify vendor', 'error')
     });
   }
 
   suspendVendor(v: any) {
-    this.svc.suspend(v.id).subscribe({
+    
+    this.svc.suspend(v?.data?.id).subscribe({
       next: (r: any) => { this.detail.set(r); this.load(); this.loadStats(); this.showToast('Vendor suspended', 'success'); },
       error: (e: any) => this.showToast(e?.error?.message || 'Failed to suspend vendor', 'error')
     });
   }
 
   reactivateVendor(v: any) {
-    this.svc.update(v.id, { status: 'active' }).subscribe({ next: (r: any) => { this.detail.set(r); this.load(); this.loadStats(); } });
+    this.svc.update(v?.data?.id, { status: 'active' }).subscribe({ next: (r: any) => { this.detail.set(r); this.load(); this.loadStats(); } });
   }
 
   loadVendorContracts() {
-    const v = this.detail(); if (!v || this.vendorContracts().length) return;
+    const v = this.detail();
+    if (!v || this.vendorContracts().length) return;
+
+    const id = v?.data?.id;
+
+    if (!id) return;
     this.loadingContracts.set(true);
-    this.svc.getContracts(v.id).subscribe({ next: (r: any) => { this.vendorContracts.set(r || []); this.loadingContracts.set(false); }, error: () => this.loadingContracts.set(false) });
+    this.svc.getContracts(id).subscribe({ next: (r: any) => { this.vendorContracts.set(r.data || []); this.loadingContracts.set(false); }, error: () => this.loadingContracts.set(false) });
   }
 
   submitVendorContract() {
+     if (!this.contractForm.contract_no.trim()) { this.contractError.set('Contract number required.'); return; }
     if (!this.contractForm.title.trim()) { this.contractError.set('Title required.'); return; }
-    if (!this.contractForm.start_date)   { this.contractError.set('Start date required.'); return; }
+    if (!this.contractForm.start_date) { this.contractError.set('Start date required.'); return; }
     const v = this.detail(); if (!v) return;
     this.savingContract.set(true); this.contractError.set('');
     const payload = { ...this.contractForm };
     if (!payload.value) delete payload.value;
     if (!payload.end_date) delete payload.end_date;
-    this.svc.addContract(v.id, payload).subscribe({
+    this.svc.addContract(v?.data?.id, payload).subscribe({
       next: (r: any) => {
         this.savingContract.set(false); this.openAddContract = false;
-        this.vendorContracts.update(list => [r, ...list]);
-        this.contractForm = { title: '', type: 'service', value: '', currency: 'SAR', start_date: '', end_date: '' };
+        this.vendorContracts.update(list => [r.data, ...list]);
+        this.contractForm = { contract_no:'',title: '', type: 'service', value: '', currency: 'SAR', start_date: '', end_date: '' };
       },
       error: (e: any) => { this.savingContract.set(false); this.contractError.set(e?.error?.message || 'Failed.'); }
     });
   }
 
   loadEvaluations() {
-    const v = this.detail(); if (!v || this.evaluations().length) return;
+
+    const v = this.detail();
+    if (!v || this.evaluations().length) return;
+
+    const id = v?.data?.id;
+
+    if (!id) return;
+
     this.loadingEvals.set(true);
-    this.svc.getEvaluations(v.id).subscribe({ next: (r: any) => { this.evaluations.set(r || []); this.loadingEvals.set(false); }, error: () => this.loadingEvals.set(false) });
+    this.svc.getEvaluations(id).subscribe({ next: (r: any) => { this.evaluations.set(r.data || []); this.loadingEvals.set(false); }, error: () => this.loadingEvals.set(false) });
   }
 
   submitEvaluation() {
     if (!this.evalForm.evaluation_date) { this.evalError.set('Evaluation date required.'); return; }
     const v = this.detail(); if (!v) return;
+
+
     this.savingEval.set(true); this.evalError.set('');
     const payload = { ...this.evalForm };
-    ['quality_score','delivery_score','price_score','service_score','compliance_score'].forEach(k => { if (payload[k] === '') delete payload[k]; });
-    this.svc.addEvaluation(v.id, payload).subscribe({
+    ['quality_score', 'delivery_score', 'price_score', 'service_score', 'compliance_score'].forEach(k => { if (payload[k] === '') delete payload[k]; });
+    this.svc.addEvaluation(v?.data?.id, payload).subscribe({
       next: (r: any) => {
         this.savingEval.set(false); this.showEvalForm = false;
-        this.evaluations.update(list => [r, ...list]);
+        this.evaluations.update(list => [r.data, ...list]);
         this.evalForm = { evaluation_date: '', period: '', quality_score: '', delivery_score: '', price_score: '', service_score: '', compliance_score: '', comments: '', recommendations: '' };
-        this.svc.get(v.id).subscribe({ next: (updated: any) => this.detail.set(updated) });
+        this.svc.get(v?.data?.id).subscribe({ next: (updated: any) => this.detail.set(updated) });
         this.load();
       },
       error: (e: any) => { this.savingEval.set(false); this.evalError.set(e?.error?.message || 'Failed.'); }
@@ -761,7 +786,7 @@ export class VendorListComponent implements OnInit, OnDestroy {
   contractTypeClass(t: string) { return { service: 'badge-service', supply: 'badge-green', nda: 'badge-purple', partnership: 'badge-yellow', maintenance: 'badge-blue' }[t] || 'badge-draft'; }
   contractStatusClass(s: string) { return { active: 'badge-green', draft: 'badge-draft', expired: 'badge-red', terminated: 'badge-red', suspended: 'badge-yellow' }[s] || 'badge-draft'; }
 
-  toast = signal<{msg:string,type:string}|null>(null);
+  toast = signal<{ msg: string, type: string } | null>(null);
   showToast(msg: string, type: string): void {
     this.toast.set({ msg, type });
     setTimeout(() => this.toast.set(null), 3500);

@@ -56,7 +56,7 @@ if (stored && user) {
   
   checkAuth(): Observable<any> {
   return this.http.get(`${this.base}/auth/me`);
-}
+ }
 
   login(email: string, password: string): Observable<LoginResponse> {
     return this.http.post<LoginResponse>(`${this.base}/auth/login`, { email, password })

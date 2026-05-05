@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { ApiService } from './api.service';
+import { AuthService } from './auth.service';
 
 export interface ThemeDef {
   key: string;
@@ -89,20 +90,31 @@ export class ThemeService {
 
   // Default accent colours per theme
   private themeAccents: Record<string, { accent: string; accent2: string; accent3: string }> = {
-    dark:     { accent: '#3b82f6', accent2: '#6366f1', accent3: '#0ea5e9' },
-    light:    { accent: '#3b82f6', accent2: '#6366f1', accent3: '#0ea5e9' },
+    dark: { accent: '#3b82f6', accent2: '#6366f1', accent3: '#0ea5e9' },
+    light: { accent: '#3b82f6', accent2: '#6366f1', accent3: '#0ea5e9' },
     midnight: { accent: '#818cf8', accent2: '#a78bfa', accent3: '#60a5fa' },
-    ocean:    { accent: '#06b6d4', accent2: '#0ea5e9', accent3: '#22d3ee' },
-    forest:   { accent: '#22c55e', accent2: '#10b981', accent3: '#4ade80' },
-    crimson:  { accent: '#f43f5e', accent2: '#fb7185', accent3: '#e11d48' },
-    slate:    { accent: '#6366f1', accent2: '#8b5cf6', accent3: '#3b82f6' },
-    dracula:  { accent: '#bd93f9', accent2: '#ff79c6', accent3: '#8be9fd' },
+    ocean: { accent: '#06b6d4', accent2: '#0ea5e9', accent3: '#22d3ee' },
+    forest: { accent: '#22c55e', accent2: '#10b981', accent3: '#4ade80' },
+    crimson: { accent: '#f43f5e', accent2: '#fb7185', accent3: '#e11d48' },
+    slate: { accent: '#6366f1', accent2: '#8b5cf6', accent3: '#3b82f6' },
+    dracula: { accent: '#bd93f9', accent2: '#ff79c6', accent3: '#8be9fd' },
   };
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private auth: AuthService) {
+
+
+  }
 
   /** Load settings from backend and apply theme. */
   loadAndApply(): void {
+    const user = this.auth.currentUser();
+    const roles = this.auth.currentUser()?.role?.slug ?? '';
+   
+
+    // 🚫 Only allow admin or super_admin
+    if (!user || !['admin', 'super_admin'].includes(roles)) {
+      return;
+    }
     this.api.get<any>('/admin/settings').subscribe({
       next: (res: any) => {
         const settings: any[] = Array.isArray(res) ? res : (res?.data || []);
@@ -111,23 +123,23 @@ export class ThemeService {
         settings.forEach((s: any) => map[s.key] = s.value);
         this.applySettings(map);
       },
-      error: () => {}
+      error: () => { }
     });
   }
 
   /** Apply a settings map to CSS variables immediately */
   applySettings(map: Record<string, string>): void {
-    const root      = document.documentElement;
-    const themeKey  = map['theme'] || 'dark';
-    const themeDef  = this.themes.find(t => t.key === themeKey) || this.themes[0];
+    const root = document.documentElement;
+    const themeKey = map['theme'] || 'dark';
+    const themeDef = this.themes.find(t => t.key === themeKey) || this.themes[0];
 
     // Apply base vars from the theme
     Object.entries(themeDef.vars).forEach(([k, v]) => root.style.setProperty(k, v));
 
     // Apply accent colours — use custom primary_color if set, else theme defaults
     const defaults = this.themeAccents[themeKey] || this.themeAccents['dark'];
-    const accent   = map['primary_color'] || defaults.accent;
-    root.style.setProperty('--accent',  accent);
+    const accent = map['primary_color'] || defaults.accent;
+    root.style.setProperty('--accent', accent);
     root.style.setProperty('--accent2', defaults.accent2);
     root.style.setProperty('--accent3', defaults.accent3);
   }
@@ -146,7 +158,7 @@ export class ThemeService {
     const root = document.documentElement;
     Object.entries(themeDef.vars).forEach(([k, v]) => root.style.setProperty(k, v));
     const defaults = this.themeAccents[themeKey] || this.themeAccents['dark'];
-    root.style.setProperty('--accent',  defaults.accent);
+    root.style.setProperty('--accent', defaults.accent);
     root.style.setProperty('--accent2', defaults.accent2);
     root.style.setProperty('--accent3', defaults.accent3);
   }
