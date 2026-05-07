@@ -177,7 +177,7 @@ import { AuthService } from '../../../core/services/auth.service';
             </td>
             <td style="font-size:12px;color:var(--text2)">{{ r.category?.name || '—' }}</td>
             <td><span class="badge" [class]="priorityClass(r.priority)">{{ r.priority }}</span></td>
-            <td><span class="badge" [class]="statusClass(r.status)">{{ statusLabel(r.status) }}</span></td>
+            <td><span class="badge" [class]="statusClass(r.status)">{{ statusLabel(r.status,r.target_department) }}</span></td>
             <td style="font-size:12px;color:var(--text2)">{{ r.requester?.name || '—' }}</td>
             @if (!isEmployee()) {
               <td style="font-size:12px;color:var(--text2)">{{ r.department?.name || '—' }}</td>
@@ -347,7 +347,7 @@ import { AuthService } from '../../../core/services/auth.service';
           <div style="font-size:12px;color:var(--text3);margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span class="mono-ref">{{ detail()!.reference_no }}</span>
             <span>·</span>
-            <span class="badge" [class]="statusClass(detail()!.status)">{{ statusLabel(detail()!.status) }}</span>
+            <span class="badge" [class]="statusClass(detail()!.status)">{{ statusLabel(detail()!.status, detail()!.target_department) }}</span>
             <span>·</span>
             <span class="badge" [class]="priorityClass(detail()!.priority)">{{ detail()!.priority }}</span>
           </div>
@@ -388,7 +388,7 @@ import { AuthService } from '../../../core/services/auth.service';
                   <span><span class="badge" [class]="priorityClass(detail()!.priority)">{{ detail()!.priority }}</span></span>
                 </div>
                 <div class="detail-row"><span>Status</span>
-                  <span><span class="badge" [class]="statusClass(detail()!.status)">{{ statusLabel(detail()!.status) }}</span></span>
+                  <span><span class="badge" [class]="statusClass(detail()!.status)">{{ statusLabel(detail()!.status,detail()!.target_department) }}</span></span>
                 </div>
                 <div class="detail-row"><span>Submitted By</span><span>{{ detail()!.requester?.name || '—' }}</span></div>
                 <div class="detail-row"><span>Department</span><span>{{ detail()!.department?.name || '—' }}</span></div>
@@ -541,7 +541,7 @@ import { AuthService } from '../../../core/services/auth.service';
             @if (isDeptManager() && detail()!.status !== 'submitted') {
               <div class="action-card-info">
                 <i class="fas fa-circle-info"></i>
-                <span>This request is in <strong>{{ statusLabel(detail()!.status) }}</strong> status. No actions required from you.</span>
+                <span>This request is in <strong>{{ statusLabel(detail()!.status,detail()!.target_department) }}</strong> status. No actions required from you.</span>
               </div>
             }
 
@@ -896,67 +896,67 @@ import { AuthService } from '../../../core/services/auth.service';
   `]
 })
 export class RequestsListComponent implements OnInit, OnDestroy {
-  items         = signal<any[]>([]);
-  loading       = signal(true);
-  total         = signal(0);
-  page          = signal(1);
-  totalPages    = signal(1);
-  statsCards    = signal<any[]>([]);
-  statsRaw      = signal<any>({});
-  categories    = signal<any[]>([]);
-  users         = signal<any[]>([]);
+  items = signal<any[]>([]);
+  loading = signal(true);
+  total = signal(0);
+  page = signal(1);
+  totalPages = signal(1);
+  statsCards = signal<any[]>([]);
+  statsRaw = signal<any>({});
+  categories = signal<any[]>([]);
+  users = signal<any[]>([]);
 
   search = ''; filterStatus = ''; filterPriority = ''; filterType = '';
   activeTab = 'all';
 
-  showForm  = false;
-  saving    = signal(false);
+  showForm = false;
+  saving = signal(false);
   formError = signal('');
-  toast = signal<{msg:string,type:string}|null>(null);
+  toast = signal<{ msg: string, type: string } | null>(null);
   form: any = {};
 
-  detail           = signal<any>(null);
-  dTab             = 'details';
-  comments         = signal<any[]>([]);
-  approvals        = signal<any[]>([]);
-  loadingComments  = signal(false);
+  detail = signal<any>(null);
+  dTab = 'details';
+  comments = signal<any[]>([]);
+  approvals = signal<any[]>([]);
+  loadingComments = signal(false);
   loadingApprovals = signal(false);
-  savingAction     = signal(false);
-  savingComment    = signal(false);
+  savingAction = signal(false);
+  savingComment = signal(false);
 
-  assigneeId     : any = '';
+  assigneeId: any = '';
   approveComment = '';
-  rejectReason   = '';
-  closeResolution= '';
-  newComment     = '';
-  isInternal     = false;
+  rejectReason = '';
+  closeResolution = '';
+  newComment = '';
+  isInternal = false;
 
-  private destroy$    = new Subject<void>();
+  private destroy$ = new Subject<void>();
   private searchTimer: any;
 
   // ── Role computed signals ──────────────────────────
   private _slug = computed(() => (this.auth.currentUser() as any)?.role?.slug ?? '');
 
-  isQAManager     = computed(() => ['super_admin','qa_manager'].includes(this._slug()));
-  isQASupervisor  = computed(() => this._slug() === 'quality_supervisor');
-  isQAOfficer     = computed(() => ['qa_officer','quality_supervisor'].includes(this._slug()));
-  isDeptManager   = computed(() => this._slug() === 'dept_manager');
+  isQAManager = computed(() => ['super_admin', 'qa_manager'].includes(this._slug()));
+  isQASupervisor = computed(() => this._slug() === 'quality_supervisor');
+  isQAOfficer = computed(() => ['qa_officer', 'quality_supervisor'].includes(this._slug()));
+  isDeptManager = computed(() => this._slug() === 'dept_manager');
   isComplianceMgr = computed(() => this._slug() === 'compliance_manager');
   isComplianceOfc = computed(() => this._slug() === 'compliance_officer');
-  isCompliance    = computed(() => ['compliance_manager','compliance_officer'].includes(this._slug()));
-  isEmployee      = computed(() => this._slug() === 'employee');
+  isCompliance = computed(() => ['compliance_manager', 'compliance_officer'].includes(this._slug()));
+  isEmployee = computed(() => this._slug() === 'employee');
 
   canCreate = computed(() => {
     const perms: string[] = (this.auth.currentUser() as any)?.role?.permissions || [];
-    return perms.includes('*') || perms.includes('request.create') || perms.some((p:string)=>p==='request.*');
+    return perms.includes('*') || perms.includes('request.create') || perms.some((p: string) => p === 'request.*');
   });
 
   currentUserId = computed(() => this.auth.currentUser()?.id);
 
   // QA users for assignment — only show QA dept members (officers/specialists)
   qaUsers = computed(() => {
-    const all   = this.users();
-    const me    = this.currentUserId();
+    const all = this.users();
+    const me = this.currentUserId();
     // Backend /users already returns QA dept only; filter out self (QA Manager assigning to team)
     return all.filter((u: any) => u.id !== me);
   });
@@ -973,23 +973,23 @@ export class RequestsListComponent implements OnInit, OnDestroy {
 
   // Tabs per role
   private allTabs = [
-    { key: 'all',         label: 'All Requests',   icon: 'fas fa-list' },
-    { key: 'my_requests', label: 'My Requests',     icon: 'fas fa-user' },
-    { key: 'my_approval', label: 'Pending Approval',icon: 'fas fa-stamp' },
-    { key: 'qa_queue',    label: 'My Inbox',        icon: 'fas fa-inbox' },
-    { key: 'my_tasks',    label: 'My Tasks',        icon: 'fas fa-tasks' },
-    { key: 'overdue',     label: 'Overdue',         icon: 'fas fa-exclamation-triangle' },
-    { key: 'draft',       label: 'Drafts',          icon: 'fas fa-file-pen' },
+    { key: 'all', label: 'All Requests', icon: 'fas fa-list' },
+    { key: 'my_requests', label: 'My Requests', icon: 'fas fa-user' },
+    { key: 'my_approval', label: 'Pending Approval', icon: 'fas fa-stamp' },
+    { key: 'qa_queue', label: 'My Inbox', icon: 'fas fa-inbox' },
+    { key: 'my_tasks', label: 'My Tasks', icon: 'fas fa-tasks' },
+    { key: 'overdue', label: 'Overdue', icon: 'fas fa-exclamation-triangle' },
+    { key: 'draft', label: 'Drafts', icon: 'fas fa-file-pen' },
   ];
 
   visibleTabs = computed(() => {
-    if (this.isQAManager())     return this.allTabs.filter(t => ['all','qa_queue','overdue'].includes(t.key));
-    if (this.isDeptManager())   return this.allTabs.filter(t => ['all','my_approval','overdue'].includes(t.key));
-    if (this.isQAOfficer())     return this.allTabs.filter(t => ['my_tasks','all'].includes(t.key));
-    if (this.isComplianceMgr()) return this.allTabs.filter(t => ['all','qa_queue','overdue'].includes(t.key)); // qa_queue = compliance inbox
-    if (this.isComplianceOfc()) return this.allTabs.filter(t => ['my_tasks','all'].includes(t.key));
+    if (this.isQAManager()) return this.allTabs.filter(t => ['all', 'qa_queue', 'overdue'].includes(t.key));
+    if (this.isDeptManager()) return this.allTabs.filter(t => ['all', 'my_approval', 'overdue'].includes(t.key));
+    if (this.isQAOfficer()) return this.allTabs.filter(t => ['my_tasks', 'all'].includes(t.key));
+    if (this.isComplianceMgr()) return this.allTabs.filter(t => ['all', 'qa_queue', 'overdue'].includes(t.key)); // qa_queue = compliance inbox
+    if (this.isComplianceOfc()) return this.allTabs.filter(t => ['my_tasks', 'all'].includes(t.key));
     // Employee
-    return this.allTabs.filter(t => ['my_requests','draft'].includes(t.key));
+    return this.allTabs.filter(t => ['my_requests', 'draft'].includes(t.key));
   });
 
   constructor(
@@ -997,17 +997,17 @@ export class RequestsListComponent implements OnInit, OnDestroy {
     private uiEvents: UiEventService,
     public lang: LanguageService,
     private auth: AuthService
-  ) {}
+  ) { }
 
   ngOnInit() {
     this.uiEvents.openNewForm$.pipe(takeUntil(this.destroy$)).subscribe(() => { if (this.canCreate()) this.openCreate(); });
     // Default tab by role
-    if (this.isQAManager())       this.activeTab = 'qa_queue';
-    else if (this.isDeptManager())  this.activeTab = 'my_approval';
-    else if (this.isQAOfficer())    this.activeTab = 'my_tasks';
-    else if (this.isComplianceMgr())this.activeTab = 'qa_queue';   // compliance inbox
-    else if (this.isComplianceOfc())this.activeTab = 'my_tasks';
-    else                            this.activeTab = 'my_requests';
+    if (this.isQAManager()) this.activeTab = 'qa_queue';
+    else if (this.isDeptManager()) this.activeTab = 'my_approval';
+    else if (this.isQAOfficer()) this.activeTab = 'my_tasks';
+    else if (this.isComplianceMgr()) this.activeTab = 'qa_queue';   // compliance inbox
+    else if (this.isComplianceOfc()) this.activeTab = 'my_tasks';
+    else this.activeTab = 'my_requests';
     this.load();
     this.loadStats();
     this.svc.categories().subscribe({ next: (r: any) => this.categories.set(r?.data || r || []) });
@@ -1017,21 +1017,21 @@ export class RequestsListComponent implements OnInit, OnDestroy {
   load() {
     this.loading.set(true);
     const p: any = { page: this.page() };
-    if (this.filterStatus)   p.status   = this.filterStatus;
+    if (this.filterStatus) p.status = this.filterStatus;
     if (this.filterPriority) p.priority = this.filterPriority;
-    if (this.filterType)     p.type     = this.filterType;
-    if (this.search)         p.q        = this.search;
+    if (this.filterType) p.type = this.filterType;
+    if (this.search) p.q = this.search;
 
     // Tab filters
     if (this.activeTab === 'my_approval') p.status = 'submitted';
-    if (this.activeTab === 'qa_queue')    p.status = 'approved';
-    if (this.activeTab === 'my_tasks')  { p.status = 'in_progress'; p.assignee_id = this.currentUserId(); }
-    if (this.activeTab === 'overdue')     p.overdue = 1;
-    if (this.activeTab === 'draft')       p.status = 'draft';
+    if (this.activeTab === 'qa_queue') p.status = 'approved';
+    if (this.activeTab === 'my_tasks') { p.status = 'in_progress'; p.assignee_id = this.currentUserId(); }
+    if (this.activeTab === 'overdue') p.overdue = 1;
+    if (this.activeTab === 'draft') p.status = 'draft';
     if (this.activeTab === 'my_requests') p.q = this.search; // backend scopes to own
 
     this.svc.list(p).subscribe({
-      next: (r: any) => { this.items.set(r.data||[]); this.total.set(r.total||0); this.totalPages.set(r.last_page||1); this.loading.set(false); },
+      next: (r: any) => { this.items.set(r.data || []); this.total.set(r.total || 0); this.totalPages.set(r.last_page || 1); this.loading.set(false); },
       error: () => this.loading.set(false)
     });
   }
@@ -1048,47 +1048,47 @@ export class RequestsListComponent implements OnInit, OnDestroy {
 
         if (this.isQAManager()) {
           this.statsCards.set([
-            { label: 'Total',        value: s.total||0,       color: 'var(--text)' },
-            { label: 'QA Queue',     value: s.approved||0,    color: '#8b5cf6', filter: 'qa_queue' },
-            { label: 'In Progress',  value: s.in_progress||0, color: '#3b82f6' },
-            { label: 'Overdue',      value: s.overdue||0,     color: '#ef4444', filter: 'overdue' },
-            { label: 'Closed',       value: s.closed||0,      color: '#10b981' },
+            { label: 'Total', value: s.total || 0, color: 'var(--text)' },
+            { label: 'QA Queue', value: s.approved || 0, color: '#8b5cf6', filter: 'qa_queue' },
+            { label: 'In Progress', value: s.in_progress || 0, color: '#3b82f6' },
+            { label: 'Overdue', value: s.overdue || 0, color: '#ef4444', filter: 'overdue' },
+            { label: 'Closed', value: s.closed || 0, color: '#10b981' },
           ]);
         } else if (this.isDeptManager()) {
           this.statsCards.set([
-            { label: 'All Requests',      value: s.total||0,      color: 'var(--text)' },
-            { label: 'Pending My Review', value: s.submitted||0,  color: '#f59e0b', filter: 'my_approval' },
-            { label: 'Approved & Forwarded', value: s.approved||0, color: '#10b981' },
-            { label: 'Rejected',          value: s.rejected||0,   color: '#ef4444' },
+            { label: 'All Requests', value: s.total || 0, color: 'var(--text)' },
+            { label: 'Pending My Review', value: s.submitted || 0, color: '#f59e0b', filter: 'my_approval' },
+            { label: 'Approved & Forwarded', value: s.approved || 0, color: '#10b981' },
+            { label: 'Rejected', value: s.rejected || 0, color: '#ef4444' },
           ]);
         } else if (this.isComplianceMgr()) {
           this.statsCards.set([
-            { label: 'Total',               value: s.total||0,       color: 'var(--text)' },
-            { label: 'Compliance Inbox',    value: s.approved||0,    color: '#a78bfa', filter: 'qa_queue' },
-            { label: 'In Progress',         value: s.in_progress||0, color: '#3b82f6' },
-            { label: 'Overdue',             value: s.overdue||0,     color: '#ef4444', filter: 'overdue' },
-            { label: 'Closed',              value: s.closed||0,      color: '#10b981' },
+            { label: 'Total', value: s.total || 0, color: 'var(--text)' },
+            { label: 'Compliance Inbox', value: s.approved || 0, color: '#a78bfa', filter: 'qa_queue' },
+            { label: 'In Progress', value: s.in_progress || 0, color: '#3b82f6' },
+            { label: 'Overdue', value: s.overdue || 0, color: '#ef4444', filter: 'overdue' },
+            { label: 'Closed', value: s.closed || 0, color: '#10b981' },
           ]);
         } else if (this.isComplianceOfc()) {
           this.statsCards.set([
-            { label: 'My Tasks',    value: s.in_progress||0, color: '#a78bfa', filter: 'my_tasks' },
-            { label: 'Completed',   value: s.closed||0,      color: '#10b981' },
-            { label: 'Overdue',     value: s.overdue||0,     color: '#ef4444', filter: 'overdue' },
+            { label: 'My Tasks', value: s.in_progress || 0, color: '#a78bfa', filter: 'my_tasks' },
+            { label: 'Completed', value: s.closed || 0, color: '#10b981' },
+            { label: 'Overdue', value: s.overdue || 0, color: '#ef4444', filter: 'overdue' },
           ]);
         } else if (this.isQAOfficer()) {
           this.statsCards.set([
-            { label: 'My Tasks',    value: s.in_progress||0, color: '#3b82f6', filter: 'my_tasks' },
-            { label: 'Completed',   value: s.closed||0,      color: '#10b981' },
-            { label: 'Overdue',     value: s.overdue||0,     color: '#ef4444', filter: 'overdue' },
+            { label: 'My Tasks', value: s.in_progress || 0, color: '#3b82f6', filter: 'my_tasks' },
+            { label: 'Completed', value: s.closed || 0, color: '#10b981' },
+            { label: 'Overdue', value: s.overdue || 0, color: '#ef4444', filter: 'overdue' },
           ]);
         } else {
           // Employee
           this.statsCards.set([
-            { label: 'My Requests', value: s.total||0,      color: 'var(--text)', filter: 'my_requests' },
-            { label: 'Drafts',      value: s.draft||0,      color: 'var(--text2)', filter: 'draft' },
-            { label: 'Submitted',   value: s.submitted||0,  color: '#f59e0b' },
-            { label: 'In Progress', value: (s.approved||0)+(s.in_progress||0), color: '#3b82f6' },
-            { label: 'Closed',      value: s.closed||0,     color: '#10b981' },
+            { label: 'My Requests', value: s.total || 0, color: 'var(--text)', filter: 'my_requests' },
+            { label: 'Drafts', value: s.draft || 0, color: 'var(--text2)', filter: 'draft' },
+            { label: 'Submitted', value: s.submitted || 0, color: '#f59e0b' },
+            { label: 'In Progress', value: (s.approved || 0) + (s.in_progress || 0), color: '#3b82f6' },
+            { label: 'Closed', value: s.closed || 0, color: '#10b981' },
           ]);
         }
       }
@@ -1098,10 +1098,10 @@ export class RequestsListComponent implements OnInit, OnDestroy {
   tabCount(key: string): number {
     const s = this.statsRaw();
     if (key === 'my_approval') return s.submitted || 0;
-    if (key === 'qa_queue')    return s.approved || 0;
-    if (key === 'my_tasks')    return s.in_progress || 0;
-    if (key === 'overdue')     return s.overdue || 0;
-    if (key === 'draft')       return s.draft || 0;
+    if (key === 'qa_queue') return s.approved || 0;
+    if (key === 'my_tasks') return s.in_progress || 0;
+    if (key === 'overdue') return s.overdue || 0;
+    if (key === 'draft') return s.draft || 0;
     return 0;
   }
 
@@ -1112,7 +1112,7 @@ export class RequestsListComponent implements OnInit, OnDestroy {
   }
 
   submit(action: 'draft' | 'submit') {
-    if (!this.form.title?.trim())       { this.formError.set('Title is required.'); return; }
+    if (!this.form.title?.trim()) { this.formError.set('Title is required.'); return; }
     if (!this.form.description?.trim()) { this.formError.set('Description is required.'); return; }
     this.saving.set(true); this.formError.set('');
     const payload = { ...this.form };
@@ -1130,7 +1130,7 @@ export class RequestsListComponent implements OnInit, OnDestroy {
       },
       error: (e: any) => {
         this.saving.set(false);
-        this.formError.set(e?.error?.message || Object.values(e?.error?.errors||{}).flat().join(', ') || 'Failed.');
+        this.formError.set(e?.error?.message || Object.values(e?.error?.errors || {}).flat().join(', ') || 'Failed.');
       }
     });
   }
@@ -1148,6 +1148,7 @@ export class RequestsListComponent implements OnInit, OnDestroy {
 
         // Load the correct team for the assignment dropdown based on target_department
         const target = req?.target_department ?? 'quality';
+        console.log('target', target);
         this.svc.users({ target_department: target }).subscribe({
           next: (ur: any) => this.users.set(ur?.data || ur || [])
         });
@@ -1224,7 +1225,7 @@ export class RequestsListComponent implements OnInit, OnDestroy {
     const d = this.detail(); if (!d || !this.newComment.trim()) return;
     this.savingComment.set(true);
     this.svc.addComment(d.id, this.newComment, this.isInternal).subscribe({
-      next: (r: any) => { this.savingComment.set(false); this.comments.update(l => [...l, r?.data||r]); this.newComment = ''; this.isInternal = false; }
+      next: (r: any) => { this.savingComment.set(false); this.comments.update(l => [...l, r?.data || r]); this.newComment = ''; this.isInternal = false; }
     });
   }
 
@@ -1239,56 +1240,61 @@ export class RequestsListComponent implements OnInit, OnDestroy {
 
   // Journey step helpers
   stepDone(status: string): boolean {
-    const order = ['submitted','approved','in_progress','closed'];
-    const cur   = this.detail()?.status;
+    const order = ['submitted', 'approved', 'in_progress', 'closed'];
+    const cur = this.detail()?.status;
     if (cur === 'rejected') return false;
     return order.indexOf(cur) > order.indexOf(status);
   }
 
   stepActive(status: string): boolean {
     const cur = this.detail()?.status;
-    if (status === 'submitted')   return cur === 'submitted';
-    if (status === 'approved')    return cur === 'approved';
+    if (status === 'submitted') return cur === 'submitted';
+    if (status === 'approved') return cur === 'approved';
     if (status === 'in_progress') return cur === 'in_progress';
-    if (status === 'closed')      return cur === 'closed';
+    if (status === 'closed') return cur === 'closed';
     return false;
   }
 
   isOverdue(d: string | null, status: string): boolean {
-    if (!d || ['approved','closed','rejected'].includes(status)) return false;
+    if (!d || ['approved', 'closed', 'rejected'].includes(status)) return false;
     return new Date(d) < new Date();
   }
 
-  fmt(s: string | null | undefined): string { return (s||'').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase()); }
+  fmt(s: string | null | undefined): string { return (s || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 
-  statusLabel(s: string): string {
+  statusLabel(s: string, targetDepartment?: string): string {
+    const approvedLabel =
+      targetDepartment === 'compliance'
+        ? 'With Compliance Manager'
+        : 'With QA Manager';
+
     const map: any = {
-      draft:       'Draft',
-      submitted:   'Awaiting Dept Approval',
-      in_review:   'In Review',
-      approved:    'With QA Manager',
+      draft: 'Draft',
+      submitted: 'Awaiting Dept Approval',
+      in_review: 'In Review',
+      approved: approvedLabel,
       in_progress: 'In Progress',
-      rejected:    'Rejected',
-      closed:      'Closed',
+      rejected: 'Rejected',
+      closed: 'Closed',
     };
     return map[s] || this.fmt(s);
   }
 
   priorityClass(p: string): string {
-    return ({ low:'badge-draft', medium:'badge-yellow', high:'badge-orange', critical:'badge-red' } as any)[p] || 'badge-draft';
+    return ({ low: 'badge-draft', medium: 'badge-yellow', high: 'badge-orange', critical: 'badge-red' } as any)[p] || 'badge-draft';
   }
 
   statusClass(s: string): string {
     return ({
-      draft:'badge-draft', submitted:'badge-yellow', in_review:'badge-blue',
-      in_progress:'badge-blue', approved:'badge-purple',
-      rejected:'badge-red', closed:'badge-green',
+      draft: 'badge-draft', submitted: 'badge-yellow', in_review: 'badge-blue',
+      in_progress: 'badge-blue', approved: 'badge-purple',
+      rejected: 'badge-red', closed: 'badge-green',
     } as any)[s] || 'badge-draft';
   }
 
-  prevPage() { if (this.page()>1) { this.page.update(p=>p-1); this.load(); } }
-  nextPage() { if (this.page()<this.totalPages()) { this.page.update(p=>p+1); this.load(); } }
-  
+  prevPage() { if (this.page() > 1) { this.page.update(p => p - 1); this.load(); } }
+  nextPage() { if (this.page() < this.totalPages()) { this.page.update(p => p + 1); this.load(); } }
+
   showToast(msg: string, type: string): void {
     this.toast.set({ msg, type });
     setTimeout(() => this.toast.set(null), 3500);

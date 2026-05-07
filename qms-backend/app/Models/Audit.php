@@ -7,7 +7,9 @@ class Audit extends Model {
     public function program()     { return $this->belongsTo(AuditProgram::class); }
     public function leadAuditor() { return $this->belongsTo(User::class,'lead_auditor_id'); }
     public function department()  { return $this->belongsTo(Department::class); }
-    public function team()        { return $this->belongsToMany(User::class,'audit_team')->withPivot('role'); }
+    public function team()        { return $this->belongsToMany(User::class,'audit_team')->withPivot('id','role'); }
+     
     public function checklists()  { return $this->hasMany(AuditChecklist::class); }
     public function findings()    { return $this->hasMany(AuditFinding::class); }
+    public function auditTeam() {return $this->hasMany(AuditTeam::class);}
 }

@@ -20,7 +20,7 @@ class Request extends Model
         // ── Original ─────────────────────────────────────────────────────────
         'reference_no', 'title', 'description', 'type', 'priority',
         'status', 'resolution', 'attachments', 'due_date', 'closed_at',
-        'category_id', 'requester_id', 'assignee_id', 'department_id',
+        'category_id', 'requester_id', 'assignee_id', 'department_id','target_department',
 
         // ── QDM v2 (2026_05_01 migration) ────────────────────────────────────
         'request_sub_type', 'dynamic_fields', 'risk_level',
