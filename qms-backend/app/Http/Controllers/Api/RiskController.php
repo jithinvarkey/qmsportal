@@ -37,30 +37,49 @@ class RiskController extends Controller {
                                   ->paginate((int)($request->per_page ?? 15)));
     }
 
-    public function store(Request $request) {
-        if (!auth()->user()->hasPermission('risk.create')) { return response()->json(['success'=>false,'message'=>'Forbidden'],403); }
-        $data = $request->validate([
-            'title'              => 'required|max:255',
-            'description'        => 'required',
-            'category_id'        => 'nullable|exists:risk_categories,id',
-            'department_id'      => 'nullable|exists:departments,id',
-            'type'               => 'required',
-            'likelihood'         => 'required|integer|between:1,5',
-            'impact'             => 'required|integer|between:1,5',
-            'treatment_strategy' => 'nullable|in:avoid,mitigate,transfer,accept',
-            'treatment_plan'     => 'nullable|string',
-            'next_review_date'   => 'nullable|date',
-            'status'             => 'nullable|string',
-        ]);
-        $data['owner_id']     = $request->user()->id;
-        $data['status']       = $data['status'] ?? 'identified';
-        $data['reference_no'] = 'RSK-'.date('Y').'-'.str_pad(Risk::count()+1,4,'0',STR_PAD_LEFT);
-        $calc = $this->calcRiskLevel((int)$data['likelihood'], (int)$data['impact']);
-        $data['risk_score'] = $calc['score'];
-        $data['risk_level'] = $calc['risk_level'];
-        $risk = Risk::create($data);
-        return response()->json($risk->load(['category','owner','department']), 201);
+    public function store(Request $request)
+{
+    if (!auth()->user()->hasPermission('risk.create')) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Forbidden'
+        ], 403);
     }
+
+    $data = $request->validate([
+        'title'              => 'required|max:255',
+        'description'        => 'required',
+        'category_id'        => 'nullable|exists:risk_categories,id',
+        'department_id'      => 'nullable|exists:departments,id',
+        'type'               => 'required',
+        'likelihood'         => 'required|integer|between:1,5',
+        'impact'             => 'required|integer|between:1,5',
+        'treatment_strategy' => 'nullable|in:avoid,mitigate,transfer,accept',
+        'treatment_plan'     => 'nullable|string',
+        'next_review_date'   => 'nullable|date',
+        'status'             => 'nullable|string',
+    ]);
+
+    $data['owner_id'] = $request->user()->id;
+
+    $data['status'] = $data['status'] ?? 'identified';
+
+    $data['reference_no'] =
+        'RSK-' . date('Y') . '-' .
+        str_pad(Risk::count() + 1, 4, '0', STR_PAD_LEFT);
+
+    // DO NOT SET risk_score / risk_level
+
+    $risk = Risk::create($data);
+
+    // Refresh to get generated columns
+    $risk->refresh();
+
+    return response()->json(
+        $risk->load(['category', 'owner', 'department']),
+        201
+    );
+}
 
     public function show($id) {
         $risk = Risk::with([

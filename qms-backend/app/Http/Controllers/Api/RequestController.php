@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
@@ -10,6 +11,7 @@ use App\Models\RequestCategory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Models\Department;
 
 /**
  * RequestController — QDM v2
@@ -18,30 +20,37 @@ use Illuminate\Support\Facades\DB;
  * store() now accepts risk_level, request_sub_type, dynamic_fields
  * so the QDM form can save without validation errors.
  */
-class RequestController extends BaseController
-{
+class RequestController extends BaseController {
+
     // ── GET /api/requests ─────────────────────────────────────────────────
 
-    public function index(Request $request): JsonResponse
-    {
+    public function index(Request $request): JsonResponse {
         $query = ServiceRequest::with(['category', 'requester', 'assignee', 'department']);
 
-        if ($request->filled('status'))        $query->where('status', $request->status);
-        if ($request->filled('priority'))      $query->where('priority', $request->priority);
-        if ($request->filled('type'))          $query->where('type', $request->type);
-        if ($request->filled('department_id')) $query->where('department_id', $request->department_id);
-        if ($request->filled('category_id'))   $query->where('category_id', $request->category_id);
-        if ($request->filled('assignee_id'))   $query->where('assignee_id', $request->assignee_id);
+        if ($request->filled('status'))
+            $query->where('status', $request->status);
+        if ($request->filled('priority'))
+            $query->where('priority', $request->priority);
+        if ($request->filled('type'))
+            $query->where('type', $request->type);
+        if ($request->filled('department_id'))
+            $query->where('department_id', $request->department_id);
+        if ($request->filled('category_id'))
+            $query->where('category_id', $request->category_id);
+        if ($request->filled('assignee_id'))
+            $query->where('assignee_id', $request->assignee_id);
         if ($request->filled('q')) {
             $q = $request->q;
             $query->where(fn($sq) => $sq
-                ->where('title',        'like', "%{$q}%")
-                ->orWhere('reference_no','like', "%{$q}%")
-                ->orWhere('description', 'like', "%{$q}%")
+                            ->where('title', 'like', "%{$q}%")
+                            ->orWhere('reference_no', 'like', "%{$q}%")
+                            ->orWhere('description', 'like', "%{$q}%")
             );
         }
-        if ($request->filled('date_from')) $query->whereDate('created_at', '>=', $request->date_from);
-        if ($request->filled('date_to'))   $query->whereDate('created_at', '<=', $request->date_to);
+        if ($request->filled('date_from'))
+            $query->whereDate('created_at', '>=', $request->date_from);
+        if ($request->filled('date_to'))
+            $query->whereDate('created_at', '<=', $request->date_to);
 
         $user = auth()->user();
         if ($user->role->slug === 'employee') {
@@ -68,11 +77,11 @@ class RequestController extends BaseController
             // ── QDM v2 (nullable so drafts without them still save) ───────
             'risk_level'       => 'nullable|in:low,medium,high,critical',
             'request_sub_type' => 'nullable|string|in:'
-                . 'policy_update,new_policy,procedure_update,new_procedure,'
-                . 'sla_update,new_sla,form_update,new_form,unregulated_work,'
-                . 'document_review,quality_review,issue_analysis,kpi_measurement,'
-                . 'manual_update,new_manual,new_project,new_development,'
-                . 'quality_note,external_audit_prep,other',
+            . 'policy_update,new_policy,procedure_update,new_procedure,'
+            . 'sla_update,new_sla,form_update,new_form,unregulated_work,'
+            . 'document_review,quality_review,issue_analysis,kpi_measurement,'
+            . 'manual_update,new_manual,new_project,new_development,'
+            . 'quality_note,external_audit_prep,other',
             'dynamic_fields'   => 'nullable|array',
 
             // ── Optional ──────────────────────────────────────────────────
@@ -80,10 +89,15 @@ class RequestController extends BaseController
             'department_id'    => 'nullable|exists:departments,id',
             'due_date'         => 'nullable|date|after_or_equal:today',
             'attachments'      => 'nullable|array',
+            'target_department' => 'nullable|in:quality,compliance',
         ]);
 
         DB::beginTransaction();
+         \Log::info('Validated-' . json_encode($validated));
         try {
+            $validated['target_department'] = strtolower(
+    trim($validated['target_department'] ?? 'quality')
+);
             $category = isset($validated['category_id'])
                 ? RequestCategory::find($validated['category_id'])
                 : null;
@@ -93,20 +107,22 @@ class RequestController extends BaseController
             }
 
             $serviceRequest = ServiceRequest::create([
-                ...$validated,
-                'reference_no' => $this->generateRef('REQ'),
-                'requester_id' => auth()->id(),
+                        ...$validated,
+                        'reference_no' => $this->generateRef('REQ'),
+                        'requester_id' => auth()->id(),
                 'department_id'=> $validated['department_id'] ?? auth()->user()->department_id,
                 'status'       => 'draft',
+                
+                
             ]);
 
             $this->logActivity('requests', 'create', $serviceRequest, [], $validated);
             DB::commit();
 
             return $this->success(
-                $serviceRequest->load(['category', 'requester', 'assignee', 'department']),
-                'Request created successfully',
-                201
+                            $serviceRequest->load(['category', 'requester', 'assignee', 'department']),
+                            'Request created successfully',
+                            201
             );
         } catch (\Exception $e) {
             DB::rollBack();
@@ -116,20 +132,18 @@ class RequestController extends BaseController
 
     // ── GET /api/requests/{id} ────────────────────────────────────────────
 
-    public function show(int $id): JsonResponse
-    {
+    public function show(int $id): JsonResponse {
         $sr = ServiceRequest::with([
-            'category', 'requester', 'assignee', 'department',
-            'comments.user', 'approvals.approver',
-        ])->findOrFail($id);
+                    'category', 'requester', 'assignee', 'department',
+                    'comments.user', 'approvals.approver',
+                ])->findOrFail($id);
 
         return $this->success($sr);
     }
 
     // ── PUT /api/requests/{id} ────────────────────────────────────────────
 
-    public function update(Request $request, int $id): JsonResponse
-    {
+    public function update(Request $request, int $id): JsonResponse {
         $sr = ServiceRequest::findOrFail($id);
 
         if (in_array($sr->status, ['approved', 'closed'], true)) {
@@ -137,17 +151,17 @@ class RequestController extends BaseController
         }
 
         $validated = $request->validate([
-            'title'            => 'sometimes|string|max:255',
-            'description'      => 'sometimes|string',
-            'category_id'      => 'nullable|exists:request_categories,id',
-            'department_id'    => 'nullable|exists:departments,id',
-            'type'             => 'sometimes|in:internal,external,client,vendor,regulatory',
-            'priority'         => 'sometimes|in:low,medium,high,critical',
-            'risk_level'       => 'nullable|in:low,medium,high,critical',
+            'title' => 'sometimes|string|max:255',
+            'description' => 'sometimes|string',
+            'category_id' => 'nullable|exists:request_categories,id',
+            'department_id' => 'nullable|exists:departments,id',
+            'type' => 'sometimes|in:internal,external,client,vendor,regulatory',
+            'priority' => 'sometimes|in:low,medium,high,critical',
+            'risk_level' => 'nullable|in:low,medium,high,critical',
             'request_sub_type' => 'nullable|string',
-            'dynamic_fields'   => 'nullable|array',
-            'due_date'         => 'nullable|date',
-            'attachments'      => 'nullable|array',
+            'dynamic_fields' => 'nullable|array',
+            'due_date' => 'nullable|date',
+            'attachments' => 'nullable|array',
         ]);
 
         $old = $sr->toArray();
@@ -155,15 +169,14 @@ class RequestController extends BaseController
         $this->logActivity('requests', 'update', $sr, $old, $validated);
 
         return $this->success(
-            $sr->fresh(['category', 'requester', 'assignee', 'department']),
-            'Request updated successfully'
+                        $sr->fresh(['category', 'requester', 'assignee', 'department']),
+                        'Request updated successfully'
         );
     }
 
     // ── DELETE /api/requests/{id} ─────────────────────────────────────────
 
-    public function destroy(int $id): JsonResponse
-    {
+    public function destroy(int $id): JsonResponse {
         $sr = ServiceRequest::findOrFail($id);
 
         if ($sr->status !== 'draft') {
@@ -178,8 +191,7 @@ class RequestController extends BaseController
 
     // ── POST /api/requests/{id}/submit ────────────────────────────────────
 
-    public function submit(int $id): JsonResponse
-    {
+    public function submit(int $id): JsonResponse {
         $sr = ServiceRequest::findOrFail($id);
 
         if ($sr->status !== 'draft') {
@@ -202,8 +214,7 @@ class RequestController extends BaseController
 
     // ── POST /api/requests/{id}/assign ────────────────────────────────────
 
-    public function assign(Request $request, int $id): JsonResponse
-    {
+    public function assign(Request $request, int $id): JsonResponse {
         $request->validate(['assignee_id' => 'required|exists:users,id']);
         $sr = ServiceRequest::findOrFail($id);
 
@@ -212,11 +223,11 @@ class RequestController extends BaseController
 
         $this->logActivity('requests', 'assign', $sr, $old);
         $this->sendNotification(
-            $request->assignee_id,
-            'request_assigned',
-            'Request Assigned to You',
-            "You have been assigned to request {$sr->reference_no}",
-            ['request_id' => $sr->id]
+                $request->assignee_id,
+                'request_assigned',
+                'Request Assigned to You',
+                "You have been assigned to request {$sr->reference_no}",
+                ['request_id' => $sr->id]
         );
 
         return $this->success($sr->fresh(['assignee']), 'Request assigned successfully');
@@ -224,28 +235,27 @@ class RequestController extends BaseController
 
     // ── POST /api/requests/{id}/approve ───────────────────────────────────
 
-    public function approve(Request $request, int $id): JsonResponse
-    {
+    public function approve(Request $request, int $id): JsonResponse {
         $request->validate(['comments' => 'nullable|string']);
         $sr = ServiceRequest::findOrFail($id);
 
         $sr->update(['status' => 'approved', 'approved_at' => now(), 'approved_by' => auth()->id()]);
 
         RequestApproval::create([
-            'request_id'  => $id,
+            'request_id' => $id,
             'approver_id' => auth()->id(),
-            'status'      => 'approved',
-            'comments'    => $request->comments,
-            'decided_at'  => now(),
+            'status' => 'approved',
+            'comments' => $request->comments,
+            'decided_at' => now(),
         ]);
 
         $this->logActivity('requests', 'approve', $sr);
         $this->sendNotification(
-            $sr->requester_id,
-            'request_approved',
-            'Your Request Has Been Approved',
-            "Request {$sr->reference_no} has been approved.",
-            ['request_id' => $sr->id]
+                $sr->requester_id,
+                'request_approved',
+                'Your Request Has Been Approved',
+                "Request {$sr->reference_no} has been approved.",
+                ['request_id' => $sr->id]
         );
 
         return $this->success($sr->fresh(), 'Request approved successfully');
@@ -253,28 +263,27 @@ class RequestController extends BaseController
 
     // ── POST /api/requests/{id}/reject ────────────────────────────────────
 
-    public function reject(Request $request, int $id): JsonResponse
-    {
+    public function reject(Request $request, int $id): JsonResponse {
         $request->validate(['reason' => 'required|string']);
         $sr = ServiceRequest::findOrFail($id);
 
         $sr->update(['status' => 'rejected']);
 
         RequestApproval::create([
-            'request_id'  => $id,
+            'request_id' => $id,
             'approver_id' => auth()->id(),
-            'status'      => 'rejected',
-            'comments'    => $request->reason,
-            'decided_at'  => now(),
+            'status' => 'rejected',
+            'comments' => $request->reason,
+            'decided_at' => now(),
         ]);
 
         $this->logActivity('requests', 'reject', $sr);
         $this->sendNotification(
-            $sr->requester_id,
-            'request_rejected',
-            'Your Request Has Been Rejected',
-            "Request {$sr->reference_no} was rejected. Reason: {$request->reason}",
-            ['request_id' => $sr->id]
+                $sr->requester_id,
+                'request_rejected',
+                'Your Request Has Been Rejected',
+                "Request {$sr->reference_no} was rejected. Reason: {$request->reason}",
+                ['request_id' => $sr->id]
         );
 
         return $this->success($sr->fresh(), 'Request rejected');
@@ -282,25 +291,24 @@ class RequestController extends BaseController
 
     // ── POST /api/requests/{id}/close ─────────────────────────────────────
 
-    public function close(Request $request, int $id): JsonResponse
-    {
+    public function close(Request $request, int $id): JsonResponse {
         $request->validate(['resolution' => 'required|string']);
         $sr = ServiceRequest::findOrFail($id);
 
         $sr->update([
-            'status'     => 'closed',
+            'status' => 'closed',
             'resolution' => $request->resolution,
-            'closed_at'  => now(),
-            'closed_by'  => auth()->id(),
+            'closed_at' => now(),
+            'closed_by' => auth()->id(),
         ]);
 
         $this->logActivity('requests', 'close', $sr);
         $this->sendNotification(
-            $sr->requester_id,
-            'request_closed',
-            'Request Closed',
-            "Request {$sr->reference_no} has been closed.",
-            ['request_id' => $sr->id]
+                $sr->requester_id,
+                'request_closed',
+                'Request Closed',
+                "Request {$sr->reference_no} has been closed.",
+                ['request_id' => $sr->id]
         );
 
         return $this->success($sr->fresh(), 'Request closed successfully');
@@ -308,8 +316,7 @@ class RequestController extends BaseController
 
     // ── QDM v2 workflow actions ───────────────────────────────────────────
 
-    public function acknowledge(Request $request, int $id): JsonResponse
-    {
+    public function acknowledge(Request $request, int $id): JsonResponse {
         $request->validate(['estimated_completion_days' => 'required|integer|min:1|max:90']);
         $sr = ServiceRequest::findOrFail($id);
 
@@ -319,101 +326,95 @@ class RequestController extends BaseController
         }
 
         ServiceRequest::where('id', $id)->update([
-            'status'                    => 'acknowledged',
+            'status' => 'acknowledged',
             'estimated_completion_days' => $request->estimated_completion_days,
-            'acknowledged_at'           => now(),
-            'eta_set_at'                => now(),
-            'status_updated_by'         => auth()->id(),
-            'status_updated_at'         => now(),
+            'acknowledged_at' => now(),
+            'eta_set_at' => now(),
+            'status_updated_by' => auth()->id(),
+            'status_updated_at' => now(),
         ]);
 
         return $this->success($sr->fresh(), 'Request acknowledged');
     }
 
-    public function requestClarification(Request $request, int $id): JsonResponse
-    {
+    public function requestClarification(Request $request, int $id): JsonResponse {
         $request->validate(['clarification_question' => 'required|string']);
         $sr = ServiceRequest::findOrFail($id);
 
         ServiceRequest::where('id', $id)->update([
-            'status'                      => 'pending_clarification',
-            'clarification_requested_at'  => now(),
-            'clarification_notes'         => $request->clarification_question,
+            'status' => 'pending_clarification',
+            'clarification_requested_at' => now(),
+            'clarification_notes' => $request->clarification_question,
         ]);
 
         return $this->success($sr->fresh(), 'Clarification requested');
     }
 
-    public function submitClarification(Request $request, int $id): JsonResponse
-    {
+    public function submitClarification(Request $request, int $id): JsonResponse {
         $request->validate(['clarification_notes' => 'required|string']);
         $sr = ServiceRequest::findOrFail($id);
 
         ServiceRequest::where('id', $id)->update([
-            'status'                       => 'submitted',
-            'clarification_submitted_at'   => now(),
-            'clarification_notes'          => $request->clarification_notes,
+            'status' => 'submitted',
+            'clarification_submitted_at' => now(),
+            'clarification_notes' => $request->clarification_notes,
         ]);
 
         return $this->success($sr->fresh(), 'Clarification submitted');
     }
 
-    public function complete(Request $request, int $id): JsonResponse
-    {
+    public function complete(Request $request, int $id): JsonResponse {
         $request->validate(['resolution' => 'required|string', 'delay_reason' => 'sometimes|string']);
         $sr = ServiceRequest::findOrFail($id);
 
         // Require delay_reason if ETA was exceeded
-        $etaExceeded = $sr->eta_set_at && $sr->estimated_completion_days
-            && now()->diffInDays($sr->eta_set_at, false) > $sr->estimated_completion_days;
+        $etaExceeded = $sr->eta_set_at && $sr->estimated_completion_days && now()->diffInDays($sr->eta_set_at, false) > $sr->estimated_completion_days;
 
         if ($etaExceeded && empty($request->delay_reason)) {
             return response()->json([
-                'success' => false,
-                'message' => 'Validation failed.',
-                'errors'  => ['delay_reason' => ['Delay reason is required when ETA has been exceeded.']],
-            ], 422);
+                        'success' => false,
+                        'message' => 'Validation failed.',
+                        'errors' => ['delay_reason' => ['Delay reason is required when ETA has been exceeded.']],
+                            ], 422);
         }
 
         ServiceRequest::where('id', $id)->update([
-            'status'           => 'completed',
-            'resolution'       => $request->resolution,
-            'completed_at'     => now(),
-            'delay_reason'     => $request->delay_reason,
+            'status' => 'completed',
+            'resolution' => $request->resolution,
+            'completed_at' => now(),
+            'delay_reason' => $request->delay_reason,
             'cycle_time_hours' => $sr->created_at ? now()->diffInHours($sr->created_at) : null,
         ]);
 
         return $this->success($sr->fresh(), 'Request completed');
     }
 
-    public function confirmReceipt(int $id): JsonResponse
-    {
+    public function confirmReceipt(int $id): JsonResponse {
         $sr = ServiceRequest::findOrFail($id);
 
         ServiceRequest::where('id', $id)->update([
-            'status'               => 'closed',
+            'status' => 'closed',
             'receipt_confirmed_at' => now(),
-            'cycle_time_hours'     => $sr->created_at ? now()->diffInHours($sr->created_at) : null,
+            'cycle_time_hours' => $sr->created_at ? now()->diffInHours($sr->created_at) : null,
         ]);
 
         return $this->success($sr->fresh(), 'Receipt confirmed — request closed');
     }
 
-    public function cancel(Request $request, int $id): JsonResponse
-    {
+    public function cancel(Request $request, int $id): JsonResponse {
         $request->validate(['reason' => 'nullable|string']);
         $sr = ServiceRequest::findOrFail($id);
 
         if (in_array($sr->status, ['closed', 'cancelled', 'approved'], true)) {
             return response()->json([
-                'success' => false,
-                'message' => 'This request cannot be cancelled.',
-                'errors'  => ['status' => ['Cannot cancel a ' . $sr->status . ' request.']],
-            ], 422);
+                        'success' => false,
+                        'message' => 'This request cannot be cancelled.',
+                        'errors' => ['status' => ['Cannot cancel a ' . $sr->status . ' request.']],
+                            ], 422);
         }
 
         ServiceRequest::where('id', $id)->update([
-            'status'       => 'cancelled',
+            'status' => 'cancelled',
             'cancelled_at' => now(),
             'delay_reason' => $request->reason,
         ]);
@@ -423,52 +424,47 @@ class RequestController extends BaseController
 
     // ── Supporting endpoints ──────────────────────────────────────────────
 
-    public function comments(int $id): JsonResponse
-    {
+    public function comments(int $id): JsonResponse {
         $comments = RequestComment::with('user')
-            ->where('request_id', $id)
-            ->orderBy('created_at', 'asc')
-            ->get();
+                ->where('request_id', $id)
+                ->orderBy('created_at', 'asc')
+                ->get();
 
         return $this->success($comments);
     }
 
-    public function addComment(Request $request, int $id): JsonResponse
-    {
+    public function addComment(Request $request, int $id): JsonResponse {
         $request->validate([
-            'comment'     => 'required|string',
+            'comment' => 'required|string',
             'is_internal' => 'boolean',
         ]);
 
         ServiceRequest::findOrFail($id);
 
         $comment = RequestComment::create([
-            'request_id'  => $id,
-            'user_id'     => auth()->id(),
-            'comment'     => $request->comment,
-            'is_internal' => $request->boolean('is_internal', false),
+                    'request_id' => $id,
+                    'user_id' => auth()->id(),
+                    'comment' => $request->comment,
+                    'is_internal' => $request->boolean('is_internal', false),
         ]);
 
         return $this->success($comment->load('user'), 'Comment added', 201);
     }
 
-    public function approvals(int $id): JsonResponse
-    {
+    public function approvals(int $id): JsonResponse {
         $approvals = RequestApproval::with('approver')
-            ->where('request_id', $id)
-            ->orderBy('sequence')
-            ->get();
+                ->where('request_id', $id)
+                ->orderBy('sequence')
+                ->get();
 
         return $this->success($approvals);
     }
 
-    public function categories(): JsonResponse
-    {
+    public function categories(): JsonResponse {
         return $this->success(RequestCategory::orderBy('name')->get());
     }
 
-    public function stats(): JsonResponse
-    {
+    public function stats(): JsonResponse {
         $user = auth()->user();
         $base = ServiceRequest::query();
 
@@ -477,15 +473,38 @@ class RequestController extends BaseController
         }
 
         return $this->success([
-            'total'       => (clone $base)->count(),
-            'draft'       => (clone $base)->where('status', 'draft')->count(),
-            'submitted'   => (clone $base)->where('status', 'submitted')->count(),
-            'in_progress' => (clone $base)->where('status', 'in_progress')->count(),
-            'approved'    => (clone $base)->where('status', 'approved')->count(),
-            'rejected'    => (clone $base)->where('status', 'rejected')->count(),
-            'closed'      => (clone $base)->where('status', 'closed')->count(),
-            'overdue'     => (clone $base)->where('due_date', '<', now())
-                ->whereNotIn('status', ['approved', 'closed', 'rejected'])->count(),
+                    'total' => (clone $base)->count(),
+                    'draft' => (clone $base)->where('status', 'draft')->count(),
+                    'submitted' => (clone $base)->where('status', 'submitted')->count(),
+                    'in_progress' => (clone $base)->where('status', 'in_progress')->count(),
+                    'approved' => (clone $base)->where('status', 'approved')->count(),
+                    'rejected' => (clone $base)->where('status', 'rejected')->count(),
+                    'closed' => (clone $base)->where('status', 'closed')->count(),
+                    'overdue' => (clone $base)->where('due_date', '<', now())
+                            ->whereNotIn('status', ['approved', 'closed', 'rejected'])->count(),
         ]);
+    }
+
+    /**
+     * Return users for request assignment dropdowns.
+     * Supports ?target_department=quality filter.
+     *
+     * Route: GET /api/requests/users
+     */
+    public function users(Request $request): JsonResponse {
+        $query = \App\Models\User::query()
+                ->where('is_active', true)
+                ->when($request->target_department, fn($q) => $q->whereHas('department', fn($d) =>
+                                $d->where('name', 'like', "%{$request->target_department}%")
+                                ->orWhere('code', $request->target_department)
+                        ))
+                ->when($request->search, fn($q) => $q->where(function ($q2) use ($request) {
+                            $q2->where('name', 'like', "%{$request->search}%")
+                            ->orWhere('email', 'like', "%{$request->search}%");
+                        }))
+                ->orderBy('name')
+                ->get(['id', 'name', 'email', 'department_id']);
+
+        return $this->success($query);
     }
 }

@@ -58,6 +58,7 @@ class VisitController extends Controller {
 
     public function clients(Request $request) {
         $q = Client::query()
+                 ->with('accountManager')
                 ->when($request->filled('type'), function ($query) use ($request) {
                     $query->where('type', $request->type);
                 })
@@ -133,12 +134,12 @@ class VisitController extends Controller {
     }
 
     public function showClient($id) {
-        return response()->json(Client::with(['visits'])->findOrFail($id));
+        return response()->json(Client::with(['visits','accountManager'])->findOrFail($id));
     }
 
     public function updateClient(Request $request, $id) {
         $client = Client::findOrFail($id);
-        $client->update($request->only(['name', 'type', 'industry', 'contact_name', 'contact_email', 'contact_phone', 'status', 'country']));
+        $client->update($request->only(['name', 'type', 'industry', 'contact_name', 'contact_email', 'contact_phone', 'status', 'country','account_manager_id','address']));
         return response()->json($client->fresh());
     }
 

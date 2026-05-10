@@ -15,7 +15,7 @@ export class AuditService {
   issueReport(id: number, data: any): Observable<any> { return this.api.post(`/audits/${id}/issue-report`, data); }
   close(id: number): Observable<any>          { return this.api.post(`/audits/${id}/close`, {}); }
   addTeamMember(id: number, data: any): Observable<any>    { return this.api.post(`/audits/${id}/team`, data); }
-  removeTeamMember(id: number, userId: number): Observable<any> { return this.api.delete(`/audits/${id}/team`); }
+  removeTeamMember(id: number, userId: number): Observable<any> { return this.api.delete(`/audits/${id}/team/${userId}`); }
   getChecklist(id: number): Observable<any>   { return this.api.get(`/audits/${id}/checklist`); }
   addChecklist(id: number, data: any): Observable<any> { return this.api.post(`/audits/${id}/checklist`, data); }
   updateChecklistItem(id: number, itemId: number, data: any): Observable<any> { return this.api.put(`/audits/${id}/checklist/${itemId}`, data); }

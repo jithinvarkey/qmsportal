@@ -124,9 +124,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/',           [RequestController::class, 'store']);
         Route::get('/categories',  [RequestController::class, 'categories']);
         Route::get('/stats',       [RequestController::class, 'stats']);
+        Route::get('/users',      [RequestController::class, 'users']); 
         Route::get('/{id}',        [RequestController::class, 'show']);
         Route::put('/{id}',        [RequestController::class, 'update']);
         Route::delete('/{id}',     [RequestController::class, 'destroy']);
+        
+         
 
         // Workflow
         Route::post('/{id}/submit',               [RequestController::class, 'submit']);
@@ -197,8 +200,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}',     [RiskController::class, 'destroy']);
         Route::post('/{id}/controls',              [RiskController::class, 'addControl']);
         Route::put('/{id}/controls/{controlId}',   [RiskController::class, 'updateControl']);
-        Route::post('/{id}/review',                [RiskController::class, 'addReview']);
+        Route::delete('/{id}/controls/{controlId}',   [RiskController::class, 'deleteControl']);
+        
+        
+        Route::post('/{id}/reviews',                [RiskController::class, 'addReview']);
         Route::put('/{id}/assess',                 [RiskController::class, 'assess']);
+
     });
 
     // ── MODULE 4: DOCUMENT CONTROL ───────────────────────────────────────────
@@ -225,8 +232,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}/preview',        [DocumentController::class, 'preview']);
     });
 
-    // ── MODULE 5: AUDITS ─────────────────────────────────────────────────────
-    Route::prefix('audits')->group(function () {
+Route::prefix('audits')->group(function () {
         Route::get('/',             [AuditController::class, 'index']);
         Route::post('/',            [AuditController::class, 'store']);
         Route::get('/stats',        [AuditController::class, 'stats']);
@@ -239,15 +245,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}',      [AuditController::class, 'destroy']);
         Route::post('/{id}/notify',             [AuditController::class, 'notify']);
         Route::post('/{id}/start',              [AuditController::class, 'start']);
-        Route::post('/{id}/team',               [AuditController::class, 'addTeamMember']);
+        Route::post('/{id}/team',               [AuditController::class, 'addTeamMember']);       
+        Route::delete('/{id}/team/{memberId}',  [AuditController::class, 'removeTeamMember']); 
         Route::get('/{id}/checklist',           [AuditController::class, 'checklist']);
         Route::put('/{id}/checklist/{itemId}',  [AuditController::class, 'updateChecklist']);
         Route::get('/{id}/findings',            [AuditController::class, 'findings']);
         Route::post('/{id}/findings',           [AuditController::class, 'addFinding']);
         Route::put('/{id}/findings/{findingId}',[AuditController::class, 'updateFinding']);
+        Route::post('/{id}/findings/{findingId}/capa',[AuditController::class, 'raiseCapa']);
         Route::post('/{id}/issue-report',       [AuditController::class, 'issueReport']);
         Route::post('/{id}/close',              [AuditController::class, 'close']);
-    });
+});
 
     // ── MODULE 6: VISITS & CLIENTS ───────────────────────────────────────────
     Route::prefix('clients')->group(function () {

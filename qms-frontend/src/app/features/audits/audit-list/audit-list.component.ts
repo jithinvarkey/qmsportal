@@ -733,7 +733,7 @@ export class AuditListComponent implements OnInit, OnDestroy {
 
   removeMember(m: any) {
     const v = this.detailAudit(); if(!v) return;
-    this.svc.removeTeamMember(v.id, m.id).subscribe({ next: () => this.reloadDetail() });
+    this.svc.removeTeamMember(v.id, m.pivot?.user_id).subscribe({ next: () => this.reloadDetail() });
   }
 
   checklistSections(): string[] {
