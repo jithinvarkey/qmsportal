@@ -200,8 +200,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}',     [RiskController::class, 'destroy']);
         Route::post('/{id}/controls',              [RiskController::class, 'addControl']);
         Route::put('/{id}/controls/{controlId}',   [RiskController::class, 'updateControl']);
-        Route::post('/{id}/review',                [RiskController::class, 'addReview']);
+        Route::delete('/{id}/controls/{controlId}',   [RiskController::class, 'deleteControl']);
+        
+        
+        Route::post('/{id}/reviews',                [RiskController::class, 'addReview']);
         Route::put('/{id}/assess',                 [RiskController::class, 'assess']);
+
     });
 
     // ── MODULE 4: DOCUMENT CONTROL ───────────────────────────────────────────
@@ -248,6 +252,7 @@ Route::prefix('audits')->group(function () {
         Route::get('/{id}/findings',            [AuditController::class, 'findings']);
         Route::post('/{id}/findings',           [AuditController::class, 'addFinding']);
         Route::put('/{id}/findings/{findingId}',[AuditController::class, 'updateFinding']);
+        Route::post('/{id}/findings/{findingId}/capa',[AuditController::class, 'raiseCapa']);
         Route::post('/{id}/issue-report',       [AuditController::class, 'issueReport']);
         Route::post('/{id}/close',              [AuditController::class, 'close']);
 });
