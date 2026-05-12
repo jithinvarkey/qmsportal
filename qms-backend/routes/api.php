@@ -39,6 +39,9 @@ Route::post('/clients/import', [ClientImportController::class, 'import']);
 Route::post('/document/documentimport', [ClientImportController::class, 'importDocuments']);
 Route::post('/user/userimport', [ClientImportController::class, 'importUsers']);
 
+Route::get('/survey-public/{token}',         [SurveyController::class, 'publicShow']);
+Route::post('/survey-public/{token}/submit', [SurveyController::class, 'publicSubmit']);
+
 // ── AUTHENTICATED ────────────────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
     // ── Generic attachments (all modules) ─────────────────────────────────
@@ -307,27 +310,65 @@ Route::prefix('audits')->group(function () {
     });
 
     // ── SURVEYS / CSAT ────────────────────────────────────────────────────────
+//    Route::prefix('surveys')->group(function () {
+//        Route::get('/',              [SurveyController::class, 'index']);
+//        Route::post('/',             [SurveyController::class, 'store']);
+//        Route::get('/stats',         [SurveyController::class, 'stats']);
+//        Route::get('/users',         [SurveyController::class, 'users']);
+//        Route::get('/clients',       [SurveyController::class, 'clients']);
+//        Route::get('/departments',   [SurveyController::class, 'departments']);
+//        Route::get('/{id}',          [SurveyController::class, 'show']);
+//        Route::put('/{id}',          [SurveyController::class, 'update']);
+//        Route::delete('/{id}',       [SurveyController::class, 'destroy']);
+//        Route::post('/{id}/activate',[SurveyController::class, 'activate']);
+//        Route::post('/{id}/close',   [SurveyController::class, 'close']);
+//        Route::post('/{id}/pause',   [SurveyController::class, 'pause']);
+//        Route::get('/{id}/responses',[SurveyController::class, 'responses']);
+//        Route::post('/{id}/responses',[SurveyController::class, 'submitResponse']);
+//        Route::get('/{id}/analytics',[SurveyController::class, 'analytics']);
+//        Route::get('/{id}/questions',[SurveyController::class, 'questions']);
+//        Route::post('/{id}/questions',[SurveyController::class, 'addQuestion']);
+//        Route::put('/{id}/questions/{qid}',[SurveyController::class, 'updateQuestion']);
+//        Route::delete('/{id}/questions/{qid}',[SurveyController::class, 'deleteQuestion']);
+//    });
+    
     Route::prefix('surveys')->group(function () {
-        Route::get('/',              [SurveyController::class, 'index']);
-        Route::post('/',             [SurveyController::class, 'store']);
-        Route::get('/stats',         [SurveyController::class, 'stats']);
-        Route::get('/users',         [SurveyController::class, 'users']);
-        Route::get('/clients',       [SurveyController::class, 'clients']);
-        Route::get('/departments',   [SurveyController::class, 'departments']);
-        Route::get('/{id}',          [SurveyController::class, 'show']);
-        Route::put('/{id}',          [SurveyController::class, 'update']);
-        Route::delete('/{id}',       [SurveyController::class, 'destroy']);
-        Route::post('/{id}/activate',[SurveyController::class, 'activate']);
-        Route::post('/{id}/close',   [SurveyController::class, 'close']);
-        Route::post('/{id}/pause',   [SurveyController::class, 'pause']);
-        Route::get('/{id}/responses',[SurveyController::class, 'responses']);
-        Route::post('/{id}/responses',[SurveyController::class, 'submitResponse']);
-        Route::get('/{id}/analytics',[SurveyController::class, 'analytics']);
-        Route::get('/{id}/questions',[SurveyController::class, 'questions']);
-        Route::post('/{id}/questions',[SurveyController::class, 'addQuestion']);
-        Route::put('/{id}/questions/{qid}',[SurveyController::class, 'updateQuestion']);
-        Route::delete('/{id}/questions/{qid}',[SurveyController::class, 'deleteQuestion']);
-    });
+
+    // Static routes — BEFORE /{id} wildcard
+    Route::get('/stats',       [SurveyController::class, 'stats']);
+    Route::get('/users',       [SurveyController::class, 'users']);
+    Route::get('/clients',     [SurveyController::class, 'clients']);
+    Route::get('/departments', [SurveyController::class, 'departments']);
+
+    // Collection
+    Route::get('/',            [SurveyController::class, 'index']);
+    Route::post('/',           [SurveyController::class, 'store']);
+
+    // Single survey — /{id} wildcard LAST
+    Route::get('/{id}',        [SurveyController::class, 'show']);
+    Route::put('/{id}',        [SurveyController::class, 'update']);
+    Route::delete('/{id}',     [SurveyController::class, 'destroy']);
+
+    // Lifecycle
+    Route::post('/{id}/activate', [SurveyController::class, 'activate']);
+    Route::post('/{id}/pause',    [SurveyController::class, 'pause']);
+    Route::post('/{id}/close',    [SurveyController::class, 'close']);
+
+    // Responses & analytics
+    Route::get('/{id}/responses',  [SurveyController::class, 'responses']);
+    Route::post('/{id}/responses', [SurveyController::class, 'submitResponse']); // internal users
+    Route::get('/{id}/analytics',  [SurveyController::class, 'analytics']);
+
+    // Questions
+    Route::get('/{id}/questions',              [SurveyController::class, 'questions']);
+    Route::post('/{id}/questions',             [SurveyController::class, 'addQuestion']);
+    Route::put('/{id}/questions/{qid}',        [SurveyController::class, 'updateQuestion']);
+    Route::delete('/{id}/questions/{qid}',     [SurveyController::class, 'deleteQuestion']);
+
+    // Customer survey — NEW
+    Route::post('/{id}/send-to-customers',     [SurveyController::class, 'sendToCustomers']);
+    Route::get('/{id}/tokens',                 [SurveyController::class, 'tokens']);
+});
 
     Route::prefix('objectives')->group(function () {
         Route::get('/',       [OkrController::class, 'index']);

@@ -1,379 +1,942 @@
 <?php
+
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
-use App\Models\{Survey, SurveyQuestion, SurveyResponse, SurveyAnswer, User, Client, Department};
+use App\Models\Survey;
+use App\Models\SurveyQuestion;
+use App\Models\SurveyToken;
+use App\Models\SurveyResponse;
+use App\Models\Client;
+use App\Models\User;
+use App\Models\Department;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
-class SurveyController extends Controller
-{
-    // GET /api/surveys
-    public function index(Request $request)
-    {
-        $q = Survey::with(['createdBy','department'])
-            ->withCount('responses')
-            ->when($request->status,      fn($q,$v) => $q->where('status', $v))
-            ->when($request->type,        fn($q,$v) => $q->where('type', $v))
-            ->when($request->target_type, fn($q,$v) => $q->where('target_type', $v))
-            ->when($request->search,      fn($q,$v) => $q->where('title','like',"%$v%"));
+/**
+ * SurveyController
+ *
+ * Handles all Survey / CSAT Management endpoints.
+ *
+ * Two modes:
+ *   INTERNAL  — surveys sent to departments/staff (requires auth)
+ *   CUSTOMER  — surveys sent to clients via unique token links (public, no auth)
+ *
+ * Route map:
+ *   Authenticated (auth:sanctum):
+ *     GET    /surveys                    → index
+ *     POST   /surveys                    → store
+ *     GET    /surveys/stats              → stats
+ *     GET    /surveys/users              → users
+ *     GET    /surveys/clients            → clients
+ *     GET    /surveys/departments        → departments
+ *     GET    /surveys/{id}              → show
+ *     PUT    /surveys/{id}              → update
+ *     DELETE /surveys/{id}              → destroy
+ *     POST   /surveys/{id}/activate     → activate
+ *     POST   /surveys/{id}/pause        → pause
+ *     POST   /surveys/{id}/close        → close
+ *     GET    /surveys/{id}/responses    → responses
+ *     GET    /surveys/{id}/analytics    → analytics
+ *     GET    /surveys/{id}/questions    → questions
+ *     POST   /surveys/{id}/questions    → addQuestion
+ *     PUT    /surveys/{id}/questions/{qid}    → updateQuestion
+ *     DELETE /surveys/{id}/questions/{qid}    → deleteQuestion
+ *     POST   /surveys/{id}/send-to-customers  → sendToCustomers   ← NEW
+ *     GET    /surveys/{id}/tokens             → tokens            ← NEW
+ *
+ *   Public (no auth):
+ *     GET    /survey-public/{token}           → publicShow        ← NEW
+ *     POST   /survey-public/{token}/submit    → publicSubmit      ← NEW
+ */
+class SurveyController extends BaseController {
 
-        return response()->json($q->orderByDesc('created_at')->paginate((int)$request->get('per_page', 15)));
+    // =========================================================================
+    // SURVEY CRUD
+    // =========================================================================
+
+    public function index(Request $request): JsonResponse {
+        $query = Survey::with(['department', 'client', 'createdBy'])
+                ->when($request->status, fn($q) => $q->where('status', $request->status))
+                ->when($request->audience_type, fn($q) => $q->where('audience_type', $request->audience_type))
+                ->when($request->type, fn($q) => $q->where('type', $request->type))
+                ->when($request->client_id, fn($q) => $q->where('client_id', $request->client_id))
+                ->when($request->department_id, fn($q) => $q->where('department_id', $request->department_id))
+                ->when($request->search, fn($q) => $q->where('title', 'like', "%{$request->search}%"))
+                ->orderBy('created_at', 'desc');
+
+        return $this->paginated($query);
     }
 
-    // POST /api/surveys
-    public function store(Request $request)
-    {
-        $data = $request->validate([
-            'title'            => 'required|string|max:255',
-            'description'      => 'nullable|string',
-            'type'             => 'required|in:csat,nps,ces,custom',
-            'target_type'      => 'in:client,complaint,visit,general',
-            'target_id'        => 'nullable|integer',
-            'send_date'        => 'nullable|date',
-            'close_date'       => 'nullable|date|after_or_equal:send_date',
-            'department_id'    => 'nullable|exists:departments,id',
-            'thank_you_message'=> 'nullable|string',
-            'is_anonymous'     => 'boolean',
-            'questions'        => 'nullable|array',
-            'questions.*.question_text' => 'required|string',
-            'questions.*.question_type' => 'required|in:rating,nps,text,choice,checkbox,yes_no',
-            'questions.*.rating_max'    => 'nullable|integer|in:5,10',
-            'questions.*.options'       => 'nullable|array',
-            'questions.*.is_required'   => 'nullable|boolean',
+    public function store(Request $request): JsonResponse {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'audience_type' => 'required|in:internal,customer',
+            'type' => 'required|in:csat,nps,general,post_visit,post_service',
+            'department_id' => 'required_if:audience_type,internal|nullable|exists:departments,id',
+            'client_id' => 'nullable|exists:clients,id',
+            'client_ids' => 'nullable|array',
+            'client_ids.*' => 'exists:clients,id',
+            'visit_id' => 'nullable|exists:visits,id',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'allow_anonymous' => 'boolean',
+            'send_reminder' => 'boolean',
+            'reminder_days' => 'nullable|integer|min:1|max:30',
+            'thank_you_message' => 'nullable|string|max:500',
+            'questions' => 'nullable|array',
+            'questions.*.question' => 'required_with:questions|string',
+            'questions.*.type' => 'required_with:questions|in:rating,nps,text,single_choice,multi_choice,yes_no',
+            'questions.*.options' => 'nullable|array',
+            'questions.*.scale_max' => 'nullable|integer|min:2|max:10',
+            'questions.*.is_required' => 'boolean',
         ]);
 
-        $questions = $data['questions'] ?? [];
-        unset($data['questions']);
-
-        $ref = 'CSAT-' . date('Y') . '-' . str_pad(Survey::count() + 1, 4, '0', STR_PAD_LEFT);
-        $data['reference_no']  = $ref;
-        $data['created_by_id'] = auth()->id();
-        $data['status']        = 'draft';
-
-        $survey = Survey::create($data);
-
-        foreach ($questions as $i => $q) {
-            $survey->questions()->create([
-                'question_text' => $q['question_text'],
-                'question_type' => $q['question_type'],
-                'rating_max'    => $q['rating_max'] ?? ($q['question_type'] === 'nps' ? 10 : 5),
-                'options'       => $q['options'] ?? null,
-                'is_required'   => $q['is_required'] ?? true,
-                'sort_order'    => $i,
-            ]);
+        // Resolve which clients were selected from the multi-select
+        $clientIds = $request->input('client_ids', []);
+        if ($request->client_id && !in_array((int) $request->client_id, array_map('intval', $clientIds))) {
+            $clientIds[] = (int) $request->client_id;
         }
 
-        return response()->json($survey->load(['createdBy','department','questions']), 201);
-    }
+        DB::transaction(function () use ($request, $clientIds, &$survey) {
 
-    // GET /api/surveys/{id}
-    public function show($id)
-    {
-        return response()->json(
-            Survey::with(['createdBy','department','questions'])
-                ->withCount('responses')
-                ->findOrFail($id)
+            $survey = Survey::create(array_merge(
+                                    $request->except(['questions', 'client_ids']),
+                                    [
+                                        'reference_no' => Survey::nextReferenceNo(),
+                                        'created_by_id' => auth()->id(),
+                                        // Save client_ids as JSON array directly on the survey record
+                                        'client_ids' => !empty($clientIds) ? $clientIds : null,
+                                        // Keep single client_id FK for backward compatibility
+                                        'client_id' => count($clientIds) === 1 ? $clientIds[0] : null,
+                                    ]
+            ));
+
+            // Seed questions
+            if ($request->questions) {
+                foreach ($request->questions as $index => $q) {
+                    $survey->questions()->create(array_merge($q, ['sort_order' => $index]));
+                }
+            } else {
+                $this->seedDefaultQuestions($survey);
+            }
+
+            // Pre-generate survey_tokens for each selected client
+            if ($survey->audience_type === 'customer' && !empty($clientIds)) {
+                $clients = Client::whereIn('id', $clientIds)
+                        ->where('status', 'active')
+                        ->get(['id', 'name', 'contact_email', 'contact_name']);
+
+                foreach ($clients as $client) {
+                    SurveyToken::create([
+                        'survey_id' => $survey->id,
+                        'client_id' => $client->id,
+                        'token' => SurveyToken::generateToken(),
+                        'recipient_email' => $client->contact_email,
+                        'recipient_name' => $client->contact_name ?? $client->name,
+                        'sent_at' => null,
+                        'expires_at' => $survey->end_date ? \Carbon\Carbon::parse($survey->end_date)->endOfDay() : null,
+                    ]);
+                }
+            }
+
+
+            if ($survey->audience_type === 'internal' && $survey->department_id) {
+
+                $users = User::where('department_id', $survey->department_id)
+                        ->where('is_active', 1)
+                        ->get();
+
+                foreach ($users as $user) {
+
+                    SurveyToken::create([
+                        'survey_id' => $survey->id,
+                        // add this column in table
+                        'user_id' => $user->id,
+                        'token' => SurveyToken::generateToken(),
+                        'recipient_email' => $user->email,
+                        'recipient_name' => $user->name,
+                        'sent_at' => null,
+                        'expires_at' => $survey->end_date ? \Carbon\Carbon::parse($survey->end_date)->endOfDay() : null,
+                    ]);
+                }
+
+                $survey->update([
+                    'total_sent' => count($users)
+                ]);
+            }
+        });
+        return $this->success(
+                        $survey->load(['questions', 'department', 'client', 'createdBy']),
+                        'Survey created',
+                        201
         );
     }
 
-    // PUT /api/surveys/{id}
-    public function update(Request $request, $id)
-    {
-        $survey = Survey::findOrFail($id);
-        $data = $request->validate([
-            'title'             => 'sometimes|required|string|max:255',
-            'description'       => 'nullable|string',
-            'type'              => 'sometimes|in:csat,nps,ces,custom',
-            'status'            => 'sometimes|in:draft,active,paused,closed',
-            'target_type'       => 'nullable|in:client,complaint,visit,general',
-            'target_id'         => 'nullable|integer',
-            'send_date'         => 'nullable|date',
-            'close_date'        => 'nullable|date',
-            'department_id'     => 'nullable|exists:departments,id',
-            'thank_you_message' => 'nullable|string',
-            'is_anonymous'      => 'boolean',
-        ]);
-        $survey->update($data);
-        return response()->json($survey->fresh(['createdBy','department','questions']));
+    public function show(string $id): JsonResponse {
+        $survey = Survey::with(['questions', 'department', 'client', 'visit', 'createdBy'])
+                ->findOrFail((int) $id);
+
+        return $this->success($survey);
     }
 
-    // DELETE /api/surveys/{id}
-    public function destroy($id)
-    {
-        $survey = Survey::findOrFail($id);
-        if ($survey->response_count > 0) {
-            return response()->json(['message' => 'Cannot delete a survey with responses.'], 422);
+    public function update(Request $request, string $id): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
+
+        $request->validate([
+            'title' => 'sometimes|required|string|max:255',
+            'description' => 'nullable|string',
+            'audience_type' => 'sometimes|in:internal,customer',
+            'type' => 'sometimes|in:csat,nps,general,post_visit,post_service',
+            'department_id' => 'nullable|exists:departments,id',
+            'client_id' => 'nullable|exists:clients,id',
+            'client_ids' => 'nullable|array',
+            'client_ids.*' => 'exists:clients,id',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+            'status' => 'nullable|in:draft,active,paused,closed',
+            'thank_you_message' => 'nullable|string|max:500',
+        ]);
+
+        // Resolve client_ids from multi-select
+        $clientIds = $request->input('client_ids', null);
+
+        DB::transaction(function () use ($request, $clientIds, $survey) {
+
+            // Save client_ids JSON array directly on the survey record
+            $survey->update(array_merge(
+                            $request->except(['client_ids', 'questions']),
+                            [
+                                // Store client_ids as JSON
+                                'client_ids' => $clientIds !== null ? (!empty($clientIds) ? $clientIds : null) : $survey->client_ids, // keep existing if not sent
+                                // Keep single client_id FK in sync
+                                'client_id' => $clientIds !== null ? (count($clientIds) === 1 ? $clientIds[0] : null) : $survey->client_id,
+                            ]
+            ));
+
+            // Sync survey_tokens when client_ids are explicitly updated
+            if ($clientIds !== null && $survey->audience_type === 'customer') {
+
+                $existingClientIds = $survey->tokens()->pluck('client_id')->toArray();
+                $newIds = array_map('intval', $clientIds);
+
+                // Add tokens for newly added clients
+                $toAdd = array_diff($newIds, $existingClientIds);
+                if (!empty($toAdd)) {
+                    $clients = Client::whereIn('id', $toAdd)
+                            ->where('status', 'active')
+                            ->get(['id', 'name', 'contact_email', 'contact_name']);
+
+                    foreach ($clients as $client) {
+                        SurveyToken::create([
+                            'survey_id' => $survey->id,
+                            'client_id' => $client->id,
+                            'token' => SurveyToken::generateToken(),
+                            'recipient_email' => $client->contact_email,
+                            'recipient_name' => $client->contact_name ?? $client->name,
+                            'sent_at' => null,
+                            'expires_at' => $survey->end_date ? \Carbon\Carbon::parse($survey->end_date)->endOfDay() : null,
+                        ]);
+                    }
+                }
+
+                // Remove tokens for de-selected clients (only if not yet sent/emailed)
+                $toRemove = array_diff($existingClientIds, $newIds);
+                if (!empty($toRemove)) {
+                    $survey->tokens()
+                            ->whereIn('client_id', $toRemove)
+                            ->whereNull('sent_at')
+                            ->delete();
+                }
+            }
+
+            if ($survey->audience_type === 'internal' && $survey->department_id) {
+
+                // Existing internal user tokens
+                $existingUserIds = $survey->tokens()
+                        ->whereNotNull('user_id')
+                        ->pluck('user_id')
+                        ->map(fn($id) => (int) $id)
+                        ->toArray();
+
+                // Current department active users
+                $departmentUserIds = User::where('department_id', $survey->department_id)
+                        ->where('status', 'active')
+                        ->pluck('id')
+                        ->map(fn($id) => (int) $id)
+                        ->toArray();
+
+                // Users to add
+                $toAdd = array_diff($departmentUserIds, $existingUserIds);
+
+                if (!empty($toAdd)) {
+
+                    $users = User::whereIn('id', $toAdd)->get();
+
+                    foreach ($users as $user) {
+
+                        SurveyToken::create([
+                            'survey_id' => $survey->id,
+                            'user_id' => $user->id,
+                            'token' => SurveyToken::generateToken(),
+                            'recipient_email' => $user->email,
+                            'recipient_name' => $user->name,
+                            'sent_at' => null,
+                            'expires_at' => $survey->end_date ? \Carbon\Carbon::parse($survey->end_date)->endOfDay() : null,
+                        ]);
+                    }
+                }
+                
+                  // Remove tokens for users no longer in department
+                $toRemove = array_diff($existingUserIds, $departmentUserIds);
+
+                if (!empty($toRemove)) {
+
+                    $survey->tokens()
+                            ->whereIn('user_id', $toRemove)
+                            ->whereNull('sent_at')
+                            ->delete();
+                }
+                
+                // Update total_sent
+                $survey->update([
+                    'total_sent' => count($departmentUserIds)
+                ]);
+            }
+
+
+            // Sync questions if provided
+            if ($request->has('questions')) {
+                $incoming = collect($request->questions ?? []);
+
+                // Delete questions not in the incoming list
+                $incomingIds = $incoming->pluck('id')->filter()->values()->toArray();
+                $survey->questions()->when(!empty($incomingIds),
+                        fn($q) => $q->whereNotIn('id', $incomingIds)
+                )->delete();
+
+                // Update existing or create new questions
+                foreach ($incoming as $index => $qData) {
+                    $options = isset($qData['options']) && is_array($qData['options']) ? array_filter($qData['options'], fn($o) => trim((string) $o) !== '') : null;
+
+                    if (!empty($qData['id'])) {
+                        // Update existing question
+                        $survey->questions()->where('id', $qData['id'])->update([
+                            'question' => $qData['question'] ?? '',
+                            'type' => $qData['type'] ?? 'rating',
+                            'options' => !empty($options) ? array_values($options) : null,
+                            'scale_max' => $qData['scale_max'] ?? 5,
+                            'is_required' => $qData['is_required'] ?? true,
+                            'sort_order' => $index,
+                        ]);
+                    } else {
+                        // Create new question
+                        $survey->questions()->create([
+                            'question' => $qData['question'] ?? '',
+                            'type' => $qData['type'] ?? 'rating',
+                            'options' => !empty($options) ? array_values($options) : null,
+                            'scale_max' => $qData['scale_max'] ?? 5,
+                            'is_required' => $qData['is_required'] ?? true,
+                            'sort_order' => $index,
+                        ]);
+                    }
+                }
+
+                
+                
+            }
+        });
+
+        return $this->success($survey->fresh()->load(['questions', 'department', 'client']), 'Survey updated');
+    }
+
+    public function destroy(string $id): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
+
+        if ($survey->status === 'active') {
+            return $this->error('Cannot delete an active survey. Close it first.', 422);
         }
+
         $survey->delete();
-        return response()->json(['message' => 'Survey deleted.']);
+
+        return $this->success(null, 'Survey deleted');
     }
 
-    // POST /api/surveys/{id}/activate
-    public function activate($id)
-    {
-        $survey = Survey::findOrFail($id);
+    // =========================================================================
+    // LIFECYCLE
+    // =========================================================================
+
+    public function activate(string $id): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
+
         if ($survey->questions()->count() === 0) {
-            return response()->json(['message' => 'Add at least one question before activating.'], 422);
+            return $this->error('Cannot activate a survey with no questions.', 422);
         }
-        $survey->update(['status' => 'active', 'send_date' => $survey->send_date ?? now()]);
-        return response()->json($survey->fresh());
+
+        $survey->update(['status' => 'active', 'start_date' => $survey->start_date ?? now()->toDateString()]);
+        $this->logActivity('surveys', 'activated', $survey);
+
+        return $this->success($survey->fresh(), 'Survey activated');
     }
 
-    // POST /api/surveys/{id}/close
-    public function close($id)
-    {
-        $survey = Survey::findOrFail($id);
-        $survey->update(['status' => 'closed', 'close_date' => now()]);
-        return response()->json($survey->fresh());
-    }
-
-    // POST /api/surveys/{id}/pause
-    public function pause($id)
-    {
-        $survey = Survey::findOrFail($id);
+    public function pause(string $id): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
         $survey->update(['status' => 'paused']);
-        return response()->json($survey->fresh());
+        $this->logActivity('surveys', 'paused', $survey);
+
+        return $this->success($survey->fresh(), 'Survey paused');
     }
 
-    // --- Questions ---
-    // POST /api/surveys/{id}/questions
-    public function addQuestion(Request $request, $id)
-    {
-        $survey = Survey::findOrFail($id);
-        $data = $request->validate([
-            'question_text' => 'required|string',
-            'question_type' => 'required|in:rating,nps,text,choice,checkbox,yes_no',
-            'rating_max'    => 'nullable|integer|in:5,10',
-            'options'       => 'nullable|array',
-            'is_required'   => 'nullable|boolean',
+    public function close(string $id): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
+        $survey->update(['status' => 'closed', 'end_date' => now()->toDateString()]);
+        $this->logActivity('surveys', 'closed', $survey);
+
+        return $this->success($survey->fresh(), 'Survey closed');
+    }
+
+    // =========================================================================
+    // QUESTIONS
+    // =========================================================================
+
+    public function questions(string $id): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
+        $questions = $survey->questions()->orderBy('sort_order')->get();
+
+        return $this->success($questions);
+    }
+
+    public function addQuestion(Request $request, string $id): JsonResponse {
+        $validated = $request->validate([
+            'question' => 'required|string|max:1000',
+            'type' => 'required|in:rating,nps,text,single_choice,multi_choice,yes_no',
+            'options' => 'nullable|array',
+            'scale_max' => 'nullable|integer|min:2|max:10',
+            'is_required' => 'boolean',
+            'sort_order' => 'nullable|integer',
         ]);
-        $data['sort_order'] = $survey->questions()->count();
-        $data['rating_max'] = $data['rating_max'] ?? ($data['question_type'] === 'nps' ? 10 : 5);
-        $q = $survey->questions()->create($data);
-        return response()->json($q, 201);
+
+        $survey = Survey::findOrFail((int) $id);
+        $question = $survey->questions()->create(array_merge(
+                        $validated,
+                        ['sort_order' => $request->sort_order ?? $survey->questions()->max('sort_order') + 1]
+        ));
+
+        return $this->success($question, 'Question added', 201);
     }
 
-    // PUT /api/surveys/{id}/questions/{qid}
-    public function updateQuestion(Request $request, $id, $qid)
-    {
-        $q = SurveyQuestion::where('survey_id', $id)->findOrFail($qid);
-        $q->update($request->validate([
-            'question_text' => 'sometimes|required|string',
-            'question_type' => 'sometimes|in:rating,nps,text,choice,checkbox,yes_no',
-            'rating_max'    => 'nullable|integer|in:5,10',
-            'options'       => 'nullable|array',
-            'is_required'   => 'nullable|boolean',
-            'sort_order'    => 'nullable|integer',
-        ]));
-        return response()->json($q->fresh());
+    public function updateQuestion(Request $request, string $id, string $qid): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
+        $question = $survey->questions()->findOrFail((int) $qid);
+
+        $validated = $request->validate([
+            'question' => 'sometimes|string|max:1000',
+            'type' => 'sometimes|in:rating,nps,text,single_choice,multi_choice,yes_no',
+            'options' => 'nullable|array',
+            'scale_max' => 'nullable|integer|min:2|max:10',
+            'is_required' => 'boolean',
+            'sort_order' => 'nullable|integer',
+        ]);
+
+        $question->update($validated);
+
+        return $this->success($question->fresh(), 'Question updated');
     }
 
-    // DELETE /api/surveys/{id}/questions/{qid}
-    public function deleteQuestion($id, $qid)
-    {
-        $q = SurveyQuestion::where('survey_id', $id)->findOrFail($qid);
-        $q->delete();
-        return response()->json(['message' => 'Question deleted.']);
+    public function deleteQuestion(string $id, string $qid): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
+        $question = $survey->questions()->findOrFail((int) $qid);
+        $question->delete();
+
+        return $this->success(null, 'Question deleted');
     }
 
-    // --- Responses ---
-    // GET /api/surveys/{id}/responses
-    public function responses(Request $request, $id)
-    {
-        Survey::findOrFail($id);
-        $responses = SurveyResponse::with(['answers.question','client'])
-            ->where('survey_id', $id)
-            ->whereNotNull('submitted_at')
-            ->orderByDesc('submitted_at')
-            ->paginate((int)$request->get('per_page', 20));
-        return response()->json($responses);
-    }
+    // =========================================================================
+    // CUSTOMER SURVEY — SEND TOKENS
+    // =========================================================================
 
-    // POST /api/surveys/{id}/responses  (submit a response)
-    public function submitResponse(Request $request, $id)
-    {
-        $survey = Survey::with('questions')->findOrFail($id);
+    /**
+     * Send survey to customers (generate tokens + email links).
+     * Route: POST /api/surveys/{id}/send-to-customers
+     *
+     * Body:
+     *   client_ids: array of client IDs (or empty = send to ALL active clients)
+     *   send_email: boolean — whether to email the link or just generate tokens
+     */
+    public function sendToCustomers(Request $request, string $id): JsonResponse {
+        $request->validate([
+            'client_ids' => 'nullable|array',
+            'client_ids.*' => 'exists:clients,id',
+            'send_email' => 'boolean',
+        ]);
+
+        $survey = Survey::findOrFail((int) $id);
+
+        if ($survey->audience_type !== 'customer') {
+            return $this->error('This survey is not configured for customers. Change audience_type to "customer" first.', 422);
+        }
 
         if ($survey->status !== 'active') {
-            return response()->json(['message' => 'This survey is not currently active.'], 422);
+            return $this->error('Survey must be active before sending to customers.', 422);
         }
 
-        $data = $request->validate([
-            'respondent_name'  => 'nullable|string|max:150',
-            'respondent_email' => 'nullable|email',
-            'respondent_type'  => 'in:client,staff,anonymous',
-            'client_id'        => 'nullable|exists:clients,id',
-            'answers'          => 'required|array',
-            'answers.*.question_id'   => 'required|exists:survey_questions,id',
-            'answers.*.answer_text'   => 'nullable|string',
-            'answers.*.answer_rating' => 'nullable|integer',
-            'answers.*.answer_choices'=> 'nullable|array',
+        // Determine which clients to send to
+        $clientQuery = Client::where('status', 'active');
+        if ($request->client_ids) {
+            $clientQuery->whereIn('id', $request->client_ids);
+        } elseif ($survey->client_id) {
+            $clientQuery->where('id', $survey->client_id);
+        }
+
+        $clients = $clientQuery->get(['id', 'name', 'contact_email', 'contact_name']);
+
+        if ($clients->isEmpty()) {
+            return $this->error('No active clients found to send the survey to.', 422);
+        }
+
+        $sent = 0;
+        $skipped = 0;
+
+        DB::transaction(function () use ($survey, $clients, $request, &$sent, &$skipped) {
+            foreach ($clients as $client) {
+                // Skip if already sent to this client for this survey
+                $existing = SurveyToken::where('survey_id', $survey->id)
+                        ->where('client_id', $client->id)
+                        ->first();
+
+                if ($existing) {
+                    $skipped++;
+                    continue;
+                }
+
+                $token = SurveyToken::create([
+                            'survey_id' => $survey->id,
+                            'client_id' => $client->id,
+                            'token' => SurveyToken::generateToken(),
+                            'recipient_email' => $client->contact_email,
+                            'recipient_name' => $client->contact_name ?? $client->name,
+                            'sent_at' => now(),
+                            'expires_at' => $survey->end_date ? \Carbon\Carbon::parse($survey->end_date)->endOfDay() : null,
+                ]);
+
+                // Send email if requested and client has email
+                if ($request->boolean('send_email', true) && $client->contact_email) {
+                    try {
+                        Mail::send('emails.survey-invitation', [
+                            'survey' => $survey,
+                            'client' => $client,
+                            'surveyUrl' => config('app.frontend_url') . '/survey/' . $token->token,
+                                ], function ($mail) use ($client, $survey) {
+                                    $mail->to('j.mani@dbroker.com.sa', $client->contact_name ?? $client->name)
+                                            ->subject('Your feedback matters — ' . $survey->title);
+                                });
+                    } catch (\Exception $e) {
+                        // Log but don't fail — token still created
+                        \Log::warning('Survey email failed for client ' . $client->id . ': ' . $e->getMessage());
+                    }
+                }
+
+                $sent++;
+            }
+
+            // Update total_sent counter
+            $survey->increment('total_sent', $sent);
+        });
+
+        return $this->success([
+                    'sent' => $sent,
+                    'skipped' => $skipped,
+                    'message' => "{$sent} token(s) generated. {$skipped} already sent.",
+        ]);
+    }
+
+    /**
+     * List all tokens for a survey (shows which clients received it and their status).
+     * Route: GET /api/surveys/{id}/tokens
+     */
+    public function tokens(string $id): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
+        $tokens = $survey->tokens()->with('client')
+                ->orderBy('sent_at', 'desc')
+                ->get();
+
+        return $this->success($tokens->map(fn($t) => [
+                            'id' => $t->id,
+                            'client' => $t->client ? ['id' => $t->client->id, 'name' => $t->client->name] : null,
+                            'recipient_name' => $t->recipient_name,
+                            'recipient_email' => $t->recipient_email,
+                            'is_completed' => $t->is_completed,
+                            'sent_at' => $t->sent_at,
+                            'completed_at' => $t->completed_at,
+                            'expires_at' => $t->expires_at,
+                            'survey_link' => config('app.frontend_url') . '/survey/' . $t->token,
+        ]));
+    }
+
+    // =========================================================================
+    // PUBLIC ENDPOINTS — No authentication required
+    // =========================================================================
+
+    /**
+     * Show survey form for a customer (via token link).
+     * Route: GET /api/survey-public/{token}
+     */
+    public function publicShow(string $token): JsonResponse {
+        $surveyToken = SurveyToken::with(['survey.questions', 'client'])
+                ->where('token', $token)
+                ->first();
+
+        if (!$surveyToken) {
+            return $this->error('Invalid survey link.', 404);
+        }
+
+        if (!$surveyToken->isValid()) {
+            if ($surveyToken->is_completed) {
+                return $this->error('You have already submitted this survey. Thank you for your feedback!', 410);
+            }
+            return $this->error('This survey link has expired.', 410);
+        }
+
+        $survey = $surveyToken->survey;
+
+        if ($survey->status !== 'active') {
+            return $this->error('This survey is no longer accepting responses.', 410);
+        }
+
+        return $this->success([
+                    'survey' => [
+                        'id' => $survey->id,
+                        'title' => $survey->title,
+                        'description' => $survey->description,
+                        'type' => $survey->type,
+                        'questions' => $survey->questions->map(fn($q) => [
+                            'id' => $q->id,
+                            'question' => $q->question,
+                            'type' => $q->type,
+                            'options' => $q->options,
+                            'scale_max' => $q->scale_max,
+                            'is_required' => $q->is_required,
+                            'sort_order' => $q->sort_order,
+                                ]),
+                    ],
+                    'recipient_name' => $surveyToken->recipient_name,
+                    'recipient_email' => $surveyToken->recipient_email,
+                    'client_name' => $surveyToken->client?->name,
+        ]);
+    }
+
+    /**
+     * Submit a customer survey response (via token).
+     * Route: POST /api/survey-public/{token}/submit
+     */
+    public function publicSubmit(Request $request, string $token): JsonResponse {
+        $surveyToken = SurveyToken::with('survey.questions')
+                ->where('token', $token)
+                ->first();
+
+        if (!$surveyToken) {
+            return $this->error('Invalid survey link.', 404);
+        }
+
+        if (!$surveyToken->isValid()) {
+            return $this->error('This survey link has already been used or has expired.', 410);
+        }
+
+        $request->validate([
+            'answers' => 'required|array|min:1',
+            'answers.*.question_id' => 'required|integer',
+            'answers.*.answer' => 'required',
+            'answers.*.score' => 'nullable|numeric',
+            'respondent_name' => 'nullable|string|max:200',
+            'respondent_email' => 'nullable|email|max:200',
+            'comments' => 'nullable|string|max:2000',
         ]);
 
-        $response = SurveyResponse::create([
-            'survey_id'       => $id,
-            'respondent_name' => $data['respondent_name'] ?? null,
-            'respondent_email'=> $data['respondent_email'] ?? null,
-            'respondent_type' => $data['respondent_type'] ?? 'anonymous',
-            'client_id'       => $data['client_id'] ?? null,
-            'user_id'         => auth()->id() ?? null,
-            'token'           => Str::random(48),
-            'submitted_at'    => now(),
-            'ip_address'      => $request->ip(),
+        $survey = $surveyToken->survey;
+
+        // Validate required questions are answered
+        $requiredQuestionIds = $survey->questions->where('is_required', true)->pluck('id')->toArray();
+        $answeredIds = collect($request->answers)->pluck('question_id')->toArray();
+        $missing = array_diff($requiredQuestionIds, $answeredIds);
+
+        if (!empty($missing)) {
+            return $this->error('Please answer all required questions.', 422);
+        }
+
+        DB::transaction(function () use ($request, $survey, $surveyToken) {
+            // Calculate overall score from rated answers
+            $scores = collect($request->answers)
+                    ->filter(fn($a) => isset($a['score']) && is_numeric($a['score']))
+                    ->pluck('score');
+
+            $overallScore = $scores->isEmpty() ? null : round((float) $scores->avg(), 2);
+
+            // Create the response
+            SurveyResponse::create([
+                'survey_id' => $survey->id,
+                'client_id' => $surveyToken->client_id,
+                'token_id' => $surveyToken->id,
+                'respondent_name' => $request->respondent_name ?? $surveyToken->recipient_name,
+                'respondent_email' => $request->respondent_email ?? $surveyToken->recipient_email,
+                'answers' => $request->answers,
+                'overall_score' => $overallScore,
+                'comments' => $request->comments,
+                'ip_address' => $request->ip(),
+                'submitted_at' => now(),
+            ]);
+
+            // Mark token as completed
+            $surveyToken->update([
+                'is_completed' => true,
+                'completed_at' => now(),
+            ]);
+
+            // Update survey aggregate stats
+            $survey->increment('total_responses');
+            $allScores = $survey->responses()->whereNotNull('overall_score')->pluck('overall_score');
+            if ($allScores->isNotEmpty()) {
+                $survey->update(['average_score' => round((float) $allScores->avg(), 2)]);
+            }
+        });
+
+        return $this->success(null, 'Thank you for your feedback! Your response has been recorded.');
+    }
+
+    // =========================================================================
+    // INTERNAL RESPONSE SUBMISSION (authenticated users / departments)
+    // =========================================================================
+
+    /**
+     * Submit a response for an internal survey.
+     * Route: POST /api/surveys/{id}/responses
+     */
+    public function submitResponse(Request $request, string $id): JsonResponse {
+        $survey = Survey::with('questions')->findOrFail((int) $id);
+
+        if ($survey->audience_type !== 'internal') {
+            return $this->error('This survey is for customers. Use the public survey link instead.', 422);
+        }
+
+        if ($survey->status !== 'active') {
+            return $this->error('This survey is not currently accepting responses.', 422);
+        }
+
+        $request->validate([
+            'answers' => 'required|array|min:1',
+            'answers.*.question_id' => 'required|integer',
+            'answers.*.answer' => 'required',
+            'answers.*.score' => 'nullable|numeric',
+            'comments' => 'nullable|string|max:2000',
         ]);
 
-        foreach ($data['answers'] as $ans) {
-            SurveyAnswer::create([
-                'response_id'    => $response->id,
-                'question_id'    => $ans['question_id'],
-                'answer_text'    => $ans['answer_text'] ?? null,
-                'answer_rating'  => $ans['answer_rating'] ?? null,
-                'answer_choices' => $ans['answer_choices'] ?? null,
+        // Prevent duplicate response from same user
+        $alreadyResponded = SurveyResponse::where('survey_id', $survey->id)
+                ->where('user_id', auth()->id())
+                ->exists();
+
+        if ($alreadyResponded) {
+            return $this->error('You have already submitted a response for this survey.', 422);
+        }
+
+        $scores = collect($request->answers)
+                ->filter(fn($a) => isset($a['score']) && is_numeric($a['score']))
+                ->pluck('score');
+
+        $overallScore = $scores->isEmpty() ? null : round((float) $scores->avg(), 2);
+
+        SurveyResponse::create([
+            'survey_id' => $survey->id,
+            'user_id' => auth()->id(),
+            'department_id' => auth()->user()->department_id ?? null,
+            'answers' => $request->answers,
+            'overall_score' => $overallScore,
+            'comments' => $request->comments,
+            'ip_address' => $request->ip(),
+            'submitted_at' => now(),
+        ]);
+
+        $survey->increment('total_responses');
+        $allScores = $survey->responses()->whereNotNull('overall_score')->pluck('overall_score');
+        if ($allScores->isNotEmpty()) {
+            $survey->update(['average_score' => round((float) $allScores->avg(), 2)]);
+        }
+
+        return $this->success(null, 'Response submitted. Thank you!', 201);
+    }
+
+    // =========================================================================
+    // ANALYTICS & RESPONSES
+    // =========================================================================
+
+    public function responses(string $id): JsonResponse {
+        $survey = Survey::findOrFail((int) $id);
+        $responses = $survey->responses()
+                ->with(['user', 'client'])
+                ->orderBy('submitted_at', 'desc')
+                ->get();
+
+        return $this->success($responses);
+    }
+
+    public function analytics(string $id): JsonResponse {
+        $survey = Survey::with('questions')->findOrFail((int) $id);
+        $responses = $survey->responses()->get();
+
+        if ($responses->isEmpty()) {
+            return $this->success([
+                        'total_sent' => $survey->total_sent,
+                        'total_responses' => 0,
+                        'response_rate' => 0,
+                        'average_score' => null,
+                        'nps_score' => null,
+                        'by_question' => [],
+                        'by_client' => [],
+                        'trend' => [],
             ]);
         }
 
-        // Recalculate aggregates
-        $this->recalcAggregates($survey);
-
-        return response()->json(['message' => 'Response submitted. Thank you!'], 201);
-    }
-
-    private function recalcAggregates(Survey $survey)
-    {
-        $count = $survey->responses()->whereNotNull('submitted_at')->count();
-
-        // Average score across all rating answers for this survey
-        $avgScore = SurveyAnswer::whereHas('response', fn($q) => $q->where('survey_id', $survey->id)->whereNotNull('submitted_at'))
-            ->whereHas('question', fn($q) => $q->whereIn('question_type', ['rating','nps']))
-            ->avg('answer_rating');
-
-        // NPS: promoters (9-10) - detractors (0-6) / total * 100
-        $npsQuestion = $survey->questions()->where('question_type', 'nps')->first();
-        $npsScore = null;
-        if ($npsQuestion) {
-            $answers = SurveyAnswer::where('question_id', $npsQuestion->id)->whereNotNull('answer_rating')->pluck('answer_rating');
-            $total = $answers->count();
-            if ($total > 0) {
-                $promoters  = $answers->filter(fn($r) => $r >= 9)->count();
-                $detractors = $answers->filter(fn($r) => $r <= 6)->count();
-                $npsScore = round((($promoters - $detractors) / $total) * 100, 1);
+        // Per-question analytics
+        $byQuestion = $survey->questions->map(function ($q) use ($responses) {
+            $answers = collect();
+            foreach ($responses as $r) {
+                $answer = collect($r->answers)->firstWhere('question_id', $q->id);
+                if ($answer)
+                    $answers->push($answer);
             }
-        }
 
-        $survey->update([
-            'response_count' => $count,
-            'avg_score'      => $avgScore ? round($avgScore, 2) : null,
-            'nps_score'      => $npsScore,
-        ]);
-    }
+            $data = ['question_id' => $q->id, 'question' => $q->question, 'type' => $q->type, 'total_answers' => $answers->count()];
 
-    // GET /api/surveys/{id}/analytics
-    public function analytics($id)
-    {
-        $survey = Survey::with('questions')->findOrFail($id);
-        $responses = SurveyResponse::where('survey_id', $id)->whereNotNull('submitted_at')->get();
-        $total = $responses->count();
-
-        $questionAnalytics = $survey->questions->map(function ($q) use ($total) {
-            $answers = SurveyAnswer::where('question_id', $q->id)->get();
-
-            $data = ['question_id' => $q->id, 'question_text' => $q->question_text, 'question_type' => $q->question_type, 'answered' => $answers->count()];
-
-            if (in_array($q->question_type, ['rating', 'nps'])) {
-                $ratings = $answers->whereNotNull('answer_rating')->pluck('answer_rating');
-                $data['avg']        = $ratings->count() ? round($ratings->avg(), 2) : null;
-                $data['min']        = $ratings->count() ? $ratings->min() : null;
-                $data['max']        = $ratings->count() ? $ratings->max() : null;
-                $data['distribution'] = [];
-                $rmax = $q->rating_max ?? 5;
-                for ($i = 1; $i <= $rmax; $i++) {
-                    $data['distribution'][] = ['value' => $i, 'count' => $ratings->filter(fn($r) => $r == $i)->count()];
-                }
-                // NPS breakdown
-                if ($q->question_type === 'nps') {
-                    $data['promoters']  = $ratings->filter(fn($r) => $r >= 9)->count();
-                    $data['passives']   = $ratings->filter(fn($r) => $r >= 7 && $r <= 8)->count();
-                    $data['detractors'] = $ratings->filter(fn($r) => $r <= 6)->count();
-                    $data['nps']        = $total > 0 ? round((($data['promoters'] - $data['detractors']) / max(1, $ratings->count())) * 100, 1) : null;
-                }
-            } elseif (in_array($q->question_type, ['choice', 'checkbox', 'yes_no'])) {
-                $choiceCounts = [];
-                foreach ($answers as $a) {
-                    $choices = $a->answer_choices ?? ($a->answer_text ? [$a->answer_text] : []);
-                    foreach ((array)$choices as $c) {
-                        $choiceCounts[$c] = ($choiceCounts[$c] ?? 0) + 1;
-                    }
-                }
-                $data['choice_counts'] = $choiceCounts;
-            } elseif ($q->question_type === 'text') {
-                $data['responses'] = $answers->whereNotNull('answer_text')->pluck('answer_text')->take(20)->values();
+            if (in_array($q->type, ['rating', 'nps'])) {
+                $scores = $answers->filter(fn($a) => isset($a['score']))->pluck('score');
+                $data['average_score'] = $scores->isEmpty() ? null : round((float) $scores->avg(), 2);
+                $data['distribution'] = $scores->countBy()->sortKeys()->toArray();
+            } elseif ($q->type === 'yes_no') {
+                $data['yes_count'] = $answers->filter(fn($a) => $a['answer'] === 'yes')->count();
+                $data['no_count'] = $answers->filter(fn($a) => $a['answer'] === 'no')->count();
+            } elseif (in_array($q->type, ['single_choice', 'multi_choice'])) {
+                $data['distribution'] = $answers->flatMap(fn($a) => (array) $a['answer'])->countBy()->toArray();
             }
 
             return $data;
         });
 
-        // Trend: responses per day over last 30 days
-        $trend = SurveyResponse::where('survey_id', $id)
-            ->whereNotNull('submitted_at')
-            ->where('submitted_at', '>=', now()->subDays(30))
-            ->selectRaw('DATE(submitted_at) as date, COUNT(*) as count')
-            ->groupBy('date')
-            ->orderBy('date')
-            ->get();
-
-        // NPS breakdown for survey level
-        $npsBreakdown = null;
-        $npsQ = $survey->questions->where('question_type', 'nps')->first();
-        if ($npsQ) {
-            $ratings = SurveyAnswer::where('question_id', $npsQ->id)->whereNotNull('answer_rating')->pluck('answer_rating');
-            $t = $ratings->count();
-            $npsBreakdown = [
-                'promoters'  => ['count' => $ratings->filter(fn($r) => $r >= 9)->count(), 'pct' => $t ? round($ratings->filter(fn($r) => $r >= 9)->count()/$t*100,1) : 0],
-                'passives'   => ['count' => $ratings->filter(fn($r) => $r >= 7 && $r <= 8)->count(), 'pct' => $t ? round($ratings->filter(fn($r) => $r >= 7 && $r <= 8)->count()/$t*100,1) : 0],
-                'detractors' => ['count' => $ratings->filter(fn($r) => $r <= 6)->count(), 'pct' => $t ? round($ratings->filter(fn($r) => $r <= 6)->count()/$t*100,1) : 0],
-            ];
+        // NPS calculation (if any NPS question exists)
+        $npsQuestion = $survey->questions->firstWhere('type', 'nps');
+        $npsScore = null;
+        if ($npsQuestion) {
+            $npsAnswers = $responses->flatMap(fn($r) => collect($r->answers)->where('question_id', $npsQuestion->id));
+            $scores = $npsAnswers->pluck('score')->filter()->values();
+            if ($scores->isNotEmpty()) {
+                $promoters = $scores->filter(fn($s) => $s >= 9)->count();
+                $detractors = $scores->filter(fn($s) => $s <= 6)->count();
+                $total = $scores->count();
+                $npsScore = $total > 0 ? round((($promoters - $detractors) / $total) * 100, 1) : 0;
+            }
         }
 
-        return response()->json([
-            'total_responses'  => $total,
-            'avg_score'        => $survey->avg_score,
-            'nps_score'        => $survey->nps_score,
-            'nps_breakdown'    => $npsBreakdown,
-            'response_trend'   => $trend,
-            'questions'        => $questionAnalytics,
+        // Response trend (last 30 days)
+        $trend = $responses
+                ->groupBy(fn($r) => $r->submitted_at->toDateString())
+                ->map(fn($g, $date) => ['date' => $date, 'count' => $g->count()])
+                ->values();
+
+        // By client (for customer surveys)
+        $byClient = [];
+        if ($survey->audience_type === 'customer') {
+            $byClient = $responses->groupBy('client_id')->map(function ($group, $clientId) {
+                        $first = $group->first();
+                        return [
+                    'client_id' => $clientId,
+                    'client_name' => $first->client?->name ?? 'Anonymous',
+                    'responses' => $group->count(),
+                    'average_score' => round((float) $group->avg('overall_score'), 2),
+                        ];
+                    })->values();
+        }
+
+        return $this->success([
+                    'total_sent' => $survey->total_sent,
+                    'total_responses' => $responses->count(),
+                    'response_rate' => $survey->total_sent > 0 ? round(($responses->count() / $survey->total_sent) * 100, 1) : 0,
+                    'average_score' => $survey->average_score,
+                    'nps_score' => $npsScore,
+                    'by_question' => $byQuestion,
+                    'by_client' => $byClient,
+                    'trend' => $trend,
         ]);
     }
 
-    // GET /api/surveys/stats
-    public function stats()
-    {
-        return response()->json([
-            'total'         => Survey::count(),
-            'active'        => Survey::where('status','active')->count(),
-            'draft'         => Survey::where('status','draft')->count(),
-            'closed'        => Survey::where('status','closed')->count(),
-            'total_responses'=> SurveyResponse::whereNotNull('submitted_at')->count(),
-            'avg_score'     => Survey::whereNotNull('avg_score')->avg('avg_score'),
-            'avg_nps'       => Survey::whereNotNull('nps_score')->avg('nps_score'),
+    // =========================================================================
+    // DROPDOWN HELPERS
+    // =========================================================================
+
+    public function stats(): JsonResponse {
+        return $this->success([
+                    'total' => Survey::count(),
+                    'active' => Survey::where('status', 'active')->count(),
+                    'draft' => Survey::where('status', 'draft')->count(),
+                    'closed' => Survey::where('status', 'closed')->count(),
+                    'internal' => Survey::where('audience_type', 'internal')->count(),
+                    'customer' => Survey::where('audience_type', 'customer')->count(),
+                    'total_responses' => SurveyResponse::count(),
+                    'average_score' => round((float) Survey::where('status', 'active')->avg('average_score'), 2),
         ]);
     }
 
-    // GET /api/surveys/users
-    public function users()
-    {
-        return response()->json(User::select('id','name','email')->where('is_active',1)->orderBy('name')->get());
+    public function users(): JsonResponse {
+        return $this->success(\App\Models\User::where('is_active', true)->orderBy('name')->get(['id', 'name', 'email']));
     }
 
-    // GET /api/surveys/clients
-    public function clients()
-    {
-        return response()->json(Client::where('status','active')->select('id','name')->orderBy('name')->get());
+    public function clients(): JsonResponse {
+        return $this->success(Client::where('status', 'active')->orderBy('name')->get(['id', 'name', 'contact_email', 'contact_name']));
     }
 
-    // GET /api/surveys/departments
-    public function departments()
-    {
-        return response()->json(Department::orderBy('name')->get());
+    public function departments(): JsonResponse {
+        return $this->success(Department::orderBy('name')->get(['id', 'name']));
+    }
+
+    // =========================================================================
+    // PRIVATE HELPERS
+    // =========================================================================
+
+    /**
+     * Seed default questions based on survey type.
+     */
+    private function seedDefaultQuestions(Survey $survey): void {
+        $defaults = match ($survey->type) {
+            'csat' => [
+                ['question' => 'Overall, how satisfied are you with our service?', 'type' => 'rating', 'scale_max' => 5],
+                ['question' => 'How would you rate the quality of our work?', 'type' => 'rating', 'scale_max' => 5],
+                ['question' => 'How responsive was our team to your needs?', 'type' => 'rating', 'scale_max' => 5],
+                ['question' => 'How likely are you to recommend us to others?', 'type' => 'nps', 'scale_max' => 10],
+                ['question' => 'What could we do better?', 'type' => 'text', 'is_required' => false],
+            ],
+            'nps' => [
+                ['question' => 'On a scale of 0–10, how likely are you to recommend Diamond Insurance Brokers to a colleague or friend?', 'type' => 'nps', 'scale_max' => 10],
+                ['question' => 'What is the main reason for your score?', 'type' => 'text', 'is_required' => false],
+            ],
+            'post_visit' => [
+                ['question' => 'How would you rate the overall meeting?', 'type' => 'rating', 'scale_max' => 5],
+                ['question' => 'Were the meeting objectives clearly communicated?', 'type' => 'yes_no'],
+                ['question' => 'How satisfied were you with the outcomes?', 'type' => 'rating', 'scale_max' => 5],
+                ['question' => 'Additional comments or suggestions', 'type' => 'text', 'is_required' => false],
+            ],
+            default => [
+                ['question' => 'How would you rate our overall performance?', 'type' => 'rating', 'scale_max' => 5],
+                ['question' => 'Please share any additional feedback', 'type' => 'text', 'is_required' => false],
+            ],
+        };
+
+        foreach ($defaults as $index => $q) {
+            $survey->questions()->create(array_merge([
+                'scale_max' => 5,
+                'is_required' => true,
+                'sort_order' => $index,
+                            ], $q));
+        }
     }
 }
