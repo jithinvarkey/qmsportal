@@ -7,6 +7,7 @@ import { ClientimportComponent } from './features/imports/clientimport/clientimp
 import { UserimportComponent } from './features/imports/userimport/userimport.component';
 import { DocumentimportComponent } from './features/imports/documentimport/documentimport.component';
 import { ResetPasswordComponent } from './features/auth/resetpassword/resetpassword.component';
+import { SurveyPublicComponent } from './features/surveys/survey-public/survey-public.component';
 export const routes: Routes = [
   // ── Public ──────────────────────────────────────────────────────────
   { path: 'login', component: LoginComponent },
@@ -15,7 +16,9 @@ export const routes: Routes = [
   {path: 'documentimport',  component: DocumentimportComponent },
    { path: 'reset-password', component: ResetPasswordComponent },
   
-
+{
+  path: 'survey/:token', component: SurveyPublicComponent,  title: 'Customer Survey — Diamond Insurance Brokers'
+},
   // ── Authenticated shell ──────────────────────────────────────────────
   {
     path: '', component: LayoutComponent, canActivate: [authGuard],

@@ -146,8 +146,8 @@ class DashboardController extends Controller
                 'active'    => Survey::where('status','active')->count(),
                 'total'     => Survey::count(),
                 'responses' => DB::table('survey_responses')->count(),
-                'avg_score' => round(Survey::whereNotNull('avg_score')->avg('avg_score') ?? 0, 1),
-                'nps'       => round(Survey::whereNotNull('nps_score')->avg('nps_score') ?? 0),
+                'avg_score' => round(Survey::whereNotNull('average_score')->avg('average_score') ?? 0, 1),
+                'nps'       => round(Survey::whereNotNull('average_score')->avg('average_score') ?? 0),
             ],
             'okr' => [
                 'total'        => Objective::count(),
