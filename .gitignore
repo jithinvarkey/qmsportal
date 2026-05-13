@@ -3,3 +3,6 @@
 /qms-frontend/.angular
 /qms-frontend/.angular
 /qms-frontend/.angular
+/qms-frontend/.angular
+.angular/
+qms-frontend/.angular/

@@ -1341,7 +1341,13 @@ export class SurveyListComponent implements OnInit {
 
   load(): void {
     this.loading.set(true);
-    this.svc.list().subscribe({
+    const p: any = {};
+    if (this.filterStatus) p.status = this.filterStatus;
+    if (this.filterAudience) p.audience_type = this.filterAudience;
+    if (this.searchText) p.search = this.searchText;
+
+
+    this.svc.list(p).subscribe({
       next: (r: any) => { this.surveys.set(r.data ?? r); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
@@ -1625,7 +1631,7 @@ export class SurveyListComponent implements OnInit {
     this.currentPage = 1;
   }
 
-  resetPage(): void { this.currentPage = 1; }
+  resetPage(): void { this.currentPage = 1;  this.load();    }
 
   onBackdrop(e: MouseEvent, fn: () => void): void {
     if ((e.target as HTMLElement).classList.contains('backdrop')) fn();
