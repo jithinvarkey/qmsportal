@@ -334,8 +334,10 @@ Route::prefix('audits')->group(function () {
     
     Route::prefix('surveys')->group(function () {
 
-    // Static routes — BEFORE /{id} wildcard
+     
+        // Static routes — BEFORE /{id} wildcard
     Route::get('/stats',       [SurveyController::class, 'stats']);
+    Route::post('/upload-media', [SurveyController::class, 'uploadMedia']);
     Route::get('/users',       [SurveyController::class, 'users']);
     Route::get('/clients',     [SurveyController::class, 'clients']);
     Route::get('/departments', [SurveyController::class, 'departments']);
@@ -368,6 +370,12 @@ Route::prefix('audits')->group(function () {
     // Customer survey — NEW
     Route::post('/{id}/send-to-customers',     [SurveyController::class, 'sendToCustomers']);
     Route::get('/{id}/tokens',                 [SurveyController::class, 'tokens']);
+    
+    
+    
+    
+    
+    
 });
 
     Route::prefix('objectives')->group(function () {

@@ -35,11 +35,20 @@ class Survey extends Model
         'end_date',
         'allow_anonymous',
         'send_reminder',
-        'reminder_days',       
+        'reminder_days',
         'created_by_id',
         'total_sent',
         'total_responses',
         'average_score',
+        // Branding
+        'logo_url',
+        'background_color',
+        'background_image',
+        'primary_color',
+        'header_text_color',
+        'card_color',
+        'font_family',
+        'language',
     ];
 
     protected $casts = [

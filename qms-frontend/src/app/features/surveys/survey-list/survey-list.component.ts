@@ -9,7 +9,6 @@ import {
 } from '@angular/core';
 import { NgClass, NgFor, NgIf, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-
 import { SurveyService } from '@app/core/services/survey.service';
 
 interface Client       { id: number; name: string; contact_email: string; contact_name: string; }
@@ -23,6 +22,8 @@ interface Survey {
   client_ids?: number[] | null;          // JSON array of selected client IDs
   total_sent: number; total_responses: number; average_score: number | null;
   start_date: string | null; end_date: string | null; created_at: string;
+  logo_url?: string; background_color?: string; background_image?: string;
+  primary_color?: string; header_text_color?: string; card_color?: string; font_family?: string; language?: string;
 }
 
 @Component({
@@ -286,6 +287,105 @@ interface Survey {
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
+     BRANDING PREVIEW OVERLAY
+══════════════════════════════════════════════════════════════════════════ -->
+<div class="preview-overlay" *ngIf="showPreview">
+  <div class="preview-toolbar">
+    <div class="preview-toolbar-left">
+      <span class="preview-badge">👁 Preview Mode</span>
+      <span class="preview-note">This is how your survey will appear to respondents</span>
+    </div>
+    <button class="preview-close" (click)="showPreview=false">✕ Close Preview</button>
+  </div>
+
+  <!-- Full survey preview with branding applied -->
+  <div class="preview-body"
+       [style.background-color]="form.background_color || '#0f172a'"
+       [style.background-image]="form.background_image ? 'url(' + form.background_image + ')' : 'none'"
+       [style.background-size]="'cover'"
+       [style.background-position]="'center'"
+       [style.font-family]="form.font_family === 'serif' ? 'Georgia, serif' : form.font_family === 'mono' ? 'monospace' : 'system-ui, sans-serif'">
+
+    <div class="preview-wrapper">
+      <div class="preview-card" [style.background]="form.card_color || '#1e293b'">
+
+        <!-- Header -->
+        <div class="preview-header" [style.background]="form.card_color || '#1e293b'">
+          <div class="preview-logo-wrap">
+            <img *ngIf="form.logo_url" [src]="form.logo_url" class="preview-logo-img" alt="Logo">
+            <div *ngIf="!form.logo_url" class="preview-logo-placeholder" [style.color]="form.primary_color || '#0ea5e9'">◈ Diamond QMS</div>
+          </div>
+          <h1 class="preview-title" [style.color]="form.header_text_color || '#f1f5f9'">
+            {{ form.title || 'Survey Title' }}
+          </h1>
+          <p class="preview-desc" *ngIf="form.description">{{ form.description }}</p>
+          <p class="preview-greeting">Hello, <strong>Respondent Name</strong></p>
+        </div>
+
+        <!-- Sample questions -->
+        <div class="preview-questions">
+          <div class="preview-q-block" *ngFor="let q of questions.slice(0,3); let i = index">
+            <div class="preview-q-label">
+              <span class="preview-q-num" [style.background]="form.primary_color || '#0ea5e9'">{{ i + 1 }}</span>
+              {{ q.question || 'Question ' + (i+1) }}
+              <span class="preview-required" *ngIf="q.is_required">*</span>
+            </div>
+
+            <!-- Rating preview -->
+            <div class="preview-rating" *ngIf="q.type === 'rating'">
+              <span class="preview-star" *ngFor="let s of [1,2,3,4,5]">★</span>
+            </div>
+
+            <!-- NPS preview -->
+            <div class="preview-nps" *ngIf="q.type === 'nps'">
+              <span class="preview-nps-btn" *ngFor="let n of [0,1,2,3,4,5,6,7,8,9,10]">{{ n }}</span>
+            </div>
+
+            <!-- Yes/No preview -->
+            <div class="preview-yesno" *ngIf="q.type === 'yes_no'">
+              <span class="preview-yn">👍 Yes</span>
+              <span class="preview-yn">👎 No</span>
+            </div>
+
+            <!-- Single/Multi choice preview -->
+            <div class="preview-choices" *ngIf="q.type === 'single_choice' || q.type === 'multi_choice'">
+              <div class="preview-choice" *ngFor="let opt of (q.options || ['Option A', 'Option B', 'Option C']).slice(0,4)">
+                <span class="preview-choice-icon">{{ q.type === 'single_choice' ? '○' : '☐' }}</span>
+                {{ opt }}
+              </div>
+            </div>
+
+            <!-- Text preview -->
+            <div class="preview-text-placeholder" *ngIf="q.type === 'text'">
+              <div class="preview-textarea">Your answer here…</div>
+            </div>
+          </div>
+
+          <!-- Show count if more questions -->
+          <div class="preview-more" *ngIf="questions.length > 3">
+            + {{ questions.length - 3 }} more question{{ questions.length - 3 > 1 ? 's' : '' }}
+          </div>
+
+          <!-- Comments block -->
+          <div class="preview-comments-label">Any additional comments? <span class="preview-optional">(optional)</span></div>
+          <div class="preview-textarea">Additional feedback…</div>
+        </div>
+
+        <!-- Submit button -->
+        <div class="preview-submit-row">
+          <button class="preview-submit-btn"
+                  [style.background]="form.primary_color || '#0ea5e9'">
+            Submit Feedback →
+          </button>
+        </div>
+
+        <div class="preview-footer">Diamond Insurance Brokers — Quality Management System</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
      NEW / EDIT SURVEY MODAL
 ══════════════════════════════════════════════════════════════════════════ -->
 <div class="backdrop" *ngIf="showModal" (click)="onBackdrop($event, closeModal.bind(this))">
@@ -431,15 +531,154 @@ interface Survey {
         <input class="inp" type="text" [(ngModel)]="form.thank_you_message">
       </div>
 
+      <!-- BRANDING -->
+      <div class="sec-title mt-20">BRANDING &amp; APPEARANCE</div>
+      <p class="sec-hint">Customise how the survey looks for your respondents.</p>
+
+      <!-- Live preview -->
+      <div class="branding-preview"
+           [style.background-color]="form.background_color || '#0f172a'"
+           [style.background-image]="form.background_image ? 'url(' + form.background_image + ')' : 'none'"
+           [style.background-size]="'cover'"
+           [style.border-color]="form.primary_color || '#0ea5e9'">
+        <div class="bp-logo-area">
+          <img *ngIf="form.logo_url" [src]="form.logo_url" class="bp-logo-img" alt="Logo">
+          <div *ngIf="!form.logo_url" class="bp-logo-placeholder" [style.color]="form.primary_color">◈ Logo</div>
+        </div>
+        <div class="bp-card" [style.background]="form.card_color || '#1e293b'">
+          <div class="bp-title" [style.color]="form.header_text_color || '#f1f5f9'">Survey Title</div>
+          <button class="bp-btn" [style.background]="form.primary_color || '#0ea5e9'">Submit →</button>
+        </div>
+      </div>
+
+      <!-- Logo upload -->
+      <div class="grid-2 mt-10">
+        <div class="field">
+          <label class="lbl">Company Logo</label>
+          <div class="upload-box" (click)="logoInput.click()" [class.has-file]="form.logo_url">
+            <input #logoInput type="file" accept="image/*" style="display:none"
+                   (change)="uploadFile($event, 'logo')">
+            <div *ngIf="!form.logo_url && !uploadingLogo()" class="upload-placeholder">
+              <span class="upload-icon">🖼️</span>
+              <span>Click to upload logo</span>
+              <span class="upload-hint">PNG, JPG, SVG · max 2MB</span>
+            </div>
+            <div *ngIf="uploadingLogo()" class="upload-placeholder">
+              <span>⏳ Uploading…</span>
+            </div>
+            <div *ngIf="form.logo_url && !uploadingLogo()" class="upload-preview">
+              <img [src]="form.logo_url" class="upload-thumb" alt="Logo">
+              <button type="button" class="upload-remove" (click)="$event.stopPropagation(); form.logo_url = ''">✕ Remove</button>
+            </div>
+          </div>
+          <div class="upload-err" *ngIf="logoError()">{{ logoError() }}</div>
+        </div>
+
+        <!-- Background image upload -->
+        <div class="field">
+          <label class="lbl">Background Image <span class="lbl-hint">(optional)</span></label>
+          <div class="upload-box" (click)="bgInput.click()" [class.has-file]="form.background_image">
+            <input #bgInput type="file" accept="image/*" style="display:none"
+                   (change)="uploadFile($event, 'background')">
+            <div *ngIf="!form.background_image && !uploadingBg()" class="upload-placeholder">
+              <span class="upload-icon">🌄</span>
+              <span>Click to upload background</span>
+              <span class="upload-hint">PNG, JPG · max 2MB</span>
+            </div>
+            <div *ngIf="uploadingBg()" class="upload-placeholder">
+              <span>⏳ Uploading…</span>
+            </div>
+            <div *ngIf="form.background_image && !uploadingBg()" class="upload-preview">
+              <img [src]="form.background_image" class="upload-thumb" alt="Background">
+              <button type="button" class="upload-remove" (click)="$event.stopPropagation(); form.background_image = ''">✕ Remove</button>
+            </div>
+          </div>
+          <div class="upload-err" *ngIf="bgError()">{{ bgError() }}</div>
+        </div>
+      </div>
+
+      <!-- Colors + font -->
+      <div class="grid-3 mt-10">
+        <div class="field">
+          <label class="lbl">Background Color</label>
+          <div class="color-field">
+            <input class="color-pick" type="color" [(ngModel)]="form.background_color">
+            <input class="inp color-hex" type="text" [(ngModel)]="form.background_color" placeholder="#0f172a" maxlength="7">
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl">Card Color</label>
+          <div class="color-field">
+            <input class="color-pick" type="color" [(ngModel)]="form.card_color">
+            <input class="inp color-hex" type="text" [(ngModel)]="form.card_color" placeholder="#1e293b" maxlength="7">
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl">Accent / Button Color</label>
+          <div class="color-field">
+            <input class="color-pick" type="color" [(ngModel)]="form.primary_color">
+            <input class="inp color-hex" type="text" [(ngModel)]="form.primary_color" placeholder="#0ea5e9" maxlength="7">
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2 mt-10">
+        <div class="field">
+          <label class="lbl">Header Text Color</label>
+          <div class="color-field">
+            <input class="color-pick" type="color" [(ngModel)]="form.header_text_color">
+            <input class="inp color-hex" type="text" [(ngModel)]="form.header_text_color" placeholder="#f1f5f9" maxlength="7">
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl">Font Family</label>
+          <select class="inp" [(ngModel)]="form.font_family">
+            <option value="system">System (Default)</option>
+            <option value="serif">Serif (Formal)</option>
+            <option value="mono">Monospace (Technical)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Language / Direction -->
+      <div class="field mt-14">
+        <label class="lbl">Survey Language &amp; Direction</label>
+        <div class="lang-options">
+          <div class="lang-opt" [class.active]="form.language === 'en' || !form.language"
+               (click)="form.language = 'en'">
+            <span class="lang-flag">🇬🇧</span>
+            <div>
+              <div class="lang-name">English</div>
+              <div class="lang-dir">Left → Right</div>
+            </div>
+            <span class="lang-check" *ngIf="form.language === 'en' || !form.language">✓</span>
+          </div>
+          <div class="lang-opt" [class.active]="form.language === 'ar'"
+               (click)="form.language = 'ar'">
+            <span class="lang-flag">🇸🇦</span>
+            <div>
+              <div class="lang-name">العربية</div>
+              <div class="lang-dir">Right ← Left</div>
+            </div>
+            <span class="lang-check" *ngIf="form.language === 'ar'">✓</span>
+          </div>
+        </div>
+        <div class="lang-hint" *ngIf="form.language === 'ar'">
+          ✅ Arabic mode: questions and answers will be displayed right-to-left on the survey page.
+        </div>
+      </div>
+
       <!-- QUESTIONS -->
       <div class="sec-title mt-20">QUESTIONS</div>
       <p class="sec-hint">Add questions to collect specific feedback. You can also add questions after creating the survey.</p>
 
       <div class="q-list">
-        <div class="q-block" *ngFor="let q of questions; let i = index">
+        <div class="q-block" *ngFor="let q of questions; let i = index; trackBy: trackByIndex">
           <div class="q-row">
             <div class="q-num">{{ i + 1 }}</div>
-            <input class="inp q-inp" type="text" [(ngModel)]="q.question" placeholder="Question text…">
+            <input class="inp q-inp" type="text" [(ngModel)]="q.question"
+                   [attr.dir]="form.language === 'ar' ? 'rtl' : 'ltr'"
+                   [placeholder]="form.language === 'ar' ? 'نص السؤال…' : 'Question text…'">
             <select class="inp q-type" [(ngModel)]="q.type">
               <option value="rating">Rating (1–5)</option>
               <option value="nps">NPS (0–10)</option>
@@ -457,17 +696,21 @@ interface Survey {
 
           <!-- Options builder — shown only for single/multi choice questions -->
           <div class="q-options-wrap" *ngIf="q.type === 'single_choice' || q.type === 'multi_choice'">
-            <div class="q-opts-label">Answer options <span class="lbl-hint">(press Enter or click + to add)</span></div>
+            <div class="q-opts-label" [attr.dir]="form.language === 'ar' ? 'rtl' : 'ltr'">
+              {{ form.language === 'ar' ? 'خيارات الإجابة' : 'Answer options' }}
+              <span class="lbl-hint">{{ form.language === 'ar' ? '(اضغط Enter أو + للإضافة)' : '(press Enter or click + to add)' }}</span>
+            </div>
             <div class="q-opt-list">
-              <div class="q-opt-row" *ngFor="let opt of (q.options || []); let oi = index">
+              <div class="q-opt-row" *ngFor="let opt of (q.options || []); let oi = index; trackBy: trackByIndex">
                 <span class="q-opt-icon">{{ q.type === 'single_choice' ? '○' : '☐' }}</span>
                 <input
                   class="inp q-opt-inp"
                   type="text"
-                  [ngModel]="opt"
-                  (ngModelChange)="updateOption(i, oi, $event)"
-                  placeholder="Option {{ oi + 1 }}"
-                  (keydown.enter)="addOption(i)">
+                  [value]="opt"
+                  (input)="updateOption(i, oi, $any($event.target).value)"
+                  [attr.dir]="form.language === 'ar' ? 'rtl' : 'ltr'"
+                  [placeholder]="form.language === 'ar' ? ('الخيار ' + (oi + 1)) : ('Option ' + (oi + 1))"
+                  (keydown.enter)="$event.preventDefault(); addOption(i)">
                 <button type="button" class="q-opt-del" (click)="removeOption(i, oi)" title="Remove option">✕</button>
               </div>
               <div class="q-opt-empty" *ngIf="!q.options || q.options.length === 0">
@@ -478,7 +721,7 @@ interface Survey {
           </div>
         </div>
       </div>
-      <button type="button" class="btn-add-q" (click)="addQuestion()">+ Add Question</button>
+      <button type="button" class="btn-add-q" (click)="addQuestion()">{{ form.language === 'ar' ? '+ إضافة سؤال' : '+ Add Question' }}</button>
 
       <!-- Error -->
       <div class="alert-err" *ngIf="modalError()">⚠️ {{ modalError() }}</div>
@@ -486,6 +729,7 @@ interface Survey {
 
     <div class="modal-ftr">
       <button class="btn btn-sec" (click)="closeModal()" [disabled]="saving()">Cancel</button>
+      <button class="btn btn-preview" type="button" (click)="showPreview=true" [disabled]="saving()">👁 Preview</button>
       <button class="btn btn-primary" (click)="save()" [disabled]="saving()">
         {{ saving() ? '⏳ Saving…' : (editId ? '💾 Update Survey' : '✅ Create Survey') }}
       </button>
@@ -714,6 +958,140 @@ interface Survey {
     .alert-ok  { margin-top:1rem; padding:.7rem 1rem; border-radius:8px; background:rgba(34,197,94,.1);  border:1px solid rgba(34,197,94,.25);  color:#4ade80; font-size:.83rem; }
     .info-banner { padding:.75rem 1rem; border-radius:8px; font-size:.82rem; background:rgba(14,165,233,.08); border:1px solid rgba(14,165,233,.2); color:var(--text-muted); line-height:1.5; }
     .send-name  { color:var(--text-secondary); font-size:.9rem; margin:0; }
+    /* ── Branding Preview Overlay ────────────────────────────────────────────── */
+    .preview-overlay {
+      position:fixed; inset:0; z-index:2000;
+      display:flex; flex-direction:column; overflow:hidden;
+    }
+    .preview-toolbar {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:.75rem 1.5rem; background:#0f172a; border-bottom:1px solid #334155;
+      flex-shrink:0; gap:1rem; z-index:10;
+    }
+    .preview-toolbar-left { display:flex; align-items:center; gap:1rem; }
+    .preview-badge {
+      padding:.3rem .75rem; border-radius:20px; font-size:.78rem; font-weight:700;
+      background:rgba(14,165,233,.15); border:1px solid rgba(14,165,233,.3); color:#38bdf8;
+    }
+    .preview-note { font-size:.8rem; color:#64748b; }
+    .preview-close {
+      padding:.45rem 1rem; border-radius:7px; border:1px solid #334155;
+      background:transparent; color:#94a3b8; font-size:.83rem; cursor:pointer;
+      transition:all .15s;
+    }
+    .preview-close:hover { border-color:#ef4444; color:#f87171; }
+
+    .preview-body {
+      flex:1; overflow-y:auto; display:flex;
+      align-items:flex-start; justify-content:center;
+      padding:2rem 1rem 4rem;
+    }
+    .preview-wrapper { width:100%; max-width:620px; }
+    .preview-card {
+      border-radius:14px; overflow:hidden;
+      box-shadow:0 20px 60px rgba(0,0,0,.6);
+    }
+    .preview-header { padding:1.75rem 2rem 1.5rem; border-bottom:1px solid rgba(255,255,255,.08); }
+    .preview-logo-wrap { margin-bottom:.9rem; }
+    .preview-logo-img { height:44px; max-width:180px; object-fit:contain; border-radius:6px; }
+    .preview-logo-placeholder { font-size:.82rem; font-weight:700; letter-spacing:.08em; }
+    .preview-title { font-size:1.5rem; font-weight:700; margin:0 0 .5rem; }
+    .preview-desc { font-size:.88rem; color:#94a3b8; margin:0 0 .65rem; line-height:1.6; }
+    .preview-greeting { font-size:.85rem; color:#94a3b8; margin:0; }
+
+    .preview-questions { padding:1.5rem 2rem; display:flex; flex-direction:column; gap:1.75rem; }
+    .preview-q-block { display:flex; flex-direction:column; gap:.75rem; }
+    .preview-q-label {
+      font-size:.93rem; font-weight:600; color:#e2e8f0;
+      display:flex; align-items:center; gap:.5rem;
+    }
+    .preview-q-num {
+      min-width:24px; height:24px; border-radius:50%; color:#fff;
+      font-size:.7rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    }
+    .preview-required { color:#f87171; font-size:.85rem; }
+
+    .preview-rating { display:flex; gap:.35rem; padding-left:2rem; }
+    .preview-star { font-size:1.8rem; color:#334155; }
+
+    .preview-nps { display:flex; gap:.3rem; padding-left:2rem; flex-wrap:wrap; }
+    .preview-nps-btn {
+      width:36px; height:36px; border-radius:7px; border:1px solid #334155;
+      background:#0f172a; color:#94a3b8; font-size:.8rem; font-weight:600;
+      display:flex; align-items:center; justify-content:center;
+    }
+
+    .preview-yesno { display:flex; gap:1rem; padding-left:2rem; }
+    .preview-yn {
+      padding:.55rem 1.25rem; border-radius:8px;
+      border:1px solid #334155; background:#0f172a; color:#94a3b8; font-size:.88rem;
+    }
+
+    .preview-choices { display:flex; flex-direction:column; gap:.45rem; padding-left:2rem; }
+    .preview-choice { display:flex; align-items:center; gap:.65rem; font-size:.875rem; color:#cbd5e1; }
+    .preview-choice-icon { color:#64748b; }
+
+    .preview-text-placeholder { padding-left:2rem; }
+    .preview-textarea {
+      width:100%; padding:.7rem .85rem; border-radius:8px;
+      border:1px solid #334155; background:rgba(0,0,0,.2); color:#64748b;
+      font-size:.875rem; min-height:72px; display:flex; align-items:flex-start;
+      box-sizing:border-box;
+    }
+
+    .preview-more { color:#64748b; font-size:.82rem; font-style:italic; padding-left:2rem; }
+    .preview-comments-label { font-size:.88rem; color:#e2e8f0; font-weight:600; margin-bottom:.5rem; }
+    .preview-optional { font-weight:400; color:#64748b; font-size:.8rem; }
+
+    .preview-submit-row { padding:1.5rem 2rem 2rem; }
+    .preview-submit-btn {
+      width:100%; padding:.875rem; border:none; border-radius:10px;
+      color:#fff; font-size:1rem; font-weight:700; cursor:default;
+      opacity:.85;
+    }
+    .preview-footer {
+      text-align:center; padding:.85rem; font-size:.7rem; color:#475569;
+      border-top:1px solid rgba(255,255,255,.06);
+    }
+    .btn-preview {
+      padding:.55rem 1.1rem; border-radius:7px; font-size:.875rem;
+      font-weight:600; cursor:pointer; border:1px solid var(--border);
+      background:rgba(14,165,233,.1); color:#38bdf8; transition:all .15s;
+    }
+    .btn-preview:hover { background:rgba(14,165,233,.18); border-color:#38bdf8; }
+    /* Language selector */
+    .lang-options { display:flex; gap:10px; }
+    .lang-opt { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:8px; border:1px solid var(--border); cursor:pointer; flex:1; transition:all .15s; background:var(--surface); }
+    .lang-opt:hover { border-color:var(--accent); }
+    .lang-opt.active { border-color:var(--accent); background:rgba(14,165,233,.08); }
+    .lang-flag { font-size:1.5rem; flex-shrink:0; }
+    .lang-name { font-size:.85rem; font-weight:600; color:var(--text-primary); }
+    .lang-dir  { font-size:.72rem; color:var(--text-muted); }
+    .lang-check { margin-left:auto; color:var(--accent); font-weight:700; font-size:1rem; }
+    .lang-hint { margin-top:8px; padding:8px 12px; border-radius:7px; font-size:.78rem; background:rgba(34,197,94,.08); border:1px solid rgba(34,197,94,.2); color:#4ade80; }
+
+    /* Branding */
+    /* File upload boxes */
+    .upload-box { border:2px dashed var(--border); border-radius:10px; padding:16px; cursor:pointer; transition:all .2s; min-height:90px; display:flex; align-items:center; justify-content:center; }
+    .upload-box:hover, .upload-box.has-file { border-color:var(--accent); background:rgba(14,165,233,.04); }
+    .upload-placeholder { display:flex; flex-direction:column; align-items:center; gap:4px; color:var(--text-muted); font-size:.8rem; text-align:center; pointer-events:none; }
+    .upload-icon { font-size:1.5rem; }
+    .upload-hint { font-size:.7rem; color:var(--text-muted); opacity:.7; }
+    .upload-preview { display:flex; flex-direction:column; align-items:center; gap:8px; }
+    .upload-thumb { max-height:60px; max-width:140px; object-fit:contain; border-radius:6px; }
+    .upload-remove { background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.3); color:#f87171; border-radius:6px; padding:3px 10px; font-size:.75rem; cursor:pointer; }
+    .upload-remove:hover { background:rgba(239,68,68,.25); }
+    .upload-err { font-size:.75rem; color:#f87171; margin-top:4px; }
+    .branding-preview { border-radius:10px; padding:14px; border:2px solid; margin-bottom:12px; display:flex; align-items:center; gap:14px; transition:all .3s; }
+    .bp-logo { flex-shrink:0; }
+    .bp-logo-img { height:36px; max-width:120px; object-fit:contain; border-radius:4px; }
+    .bp-logo-placeholder { font-size:.78rem; color:rgba(255,255,255,.4); font-style:italic; }
+    .bp-card { border-radius:8px; padding:10px 14px; flex:1; display:flex; align-items:center; justify-content:space-between; }
+    .bp-title { font-size:.85rem; font-weight:600; }
+    .bp-btn { border:none; border-radius:6px; padding:5px 14px; font-size:.78rem; font-weight:700; color:#fff; cursor:default; }
+    .color-field { display:flex; align-items:center; gap:8px; }
+    .color-pick { width:36px; height:36px; border:1px solid var(--border); border-radius:7px; padding:2px; cursor:pointer; background:none; flex-shrink:0; }
+    .color-hex { flex:1; font-family:monospace; font-size:.82rem; }
     /* ── Pagination ──────────────────────────────────────────────────────────── */
     .pagination-bar {
       display:flex; align-items:center; justify-content:space-between;
@@ -807,6 +1185,50 @@ export class SurveyListComponent implements OnInit {
   readonly modalError  = signal('');
   readonly sendError   = signal('');
   readonly sendSuccess = signal('');
+
+  // ── Branding preview ──────────────────────────────────────────────────────
+  showPreview = false;
+
+  // ── File upload state ────────────────────────────────────────────────────
+  readonly uploadingLogo = signal(false);
+  readonly uploadingBg   = signal(false);
+  readonly logoError     = signal('');
+  readonly bgError       = signal('');
+
+  uploadFile(event: Event, type: 'logo' | 'background'): void {
+    const input = event.target as HTMLInputElement;
+    const file  = input.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      if (type === 'logo') this.logoError.set('File too large — max 2MB');
+      else this.bgError.set('File too large — max 2MB');
+      input.value = ''; return;
+    }
+    if (!file.type.startsWith('image/')) {
+      if (type === 'logo') this.logoError.set('Only image files are allowed');
+      else this.bgError.set('Only image files are allowed');
+      input.value = ''; return;
+    }
+    if (type === 'logo') { this.uploadingLogo.set(true); this.logoError.set(''); }
+    else { this.uploadingBg.set(true); this.bgError.set(''); }
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', type);
+    this.svc.uploadMedia(formData).subscribe({
+      next: (r: any) => {
+        const url = r.data?.url ?? r.url;
+        if (type === 'logo') { this.form.logo_url = url; this.uploadingLogo.set(false); }
+        else { this.form.background_image = url; this.uploadingBg.set(false); }
+        input.value = '';
+      },
+      error: (e: any) => {
+        const msg = e?.error?.message ?? 'Upload failed.';
+        if (type === 'logo') { this.logoError.set(msg); this.uploadingLogo.set(false); }
+        else { this.bgError.set(msg); this.uploadingBg.set(false); }
+        input.value = '';
+      },
+    });
+  }
 
   // ── View panel ─────────────────────────────────────────────────────────
   showViewPanel   = false;
@@ -919,7 +1341,13 @@ export class SurveyListComponent implements OnInit {
 
   load(): void {
     this.loading.set(true);
-    this.svc.list().subscribe({
+    const p: any = {};
+    if (this.filterStatus) p.status = this.filterStatus;
+    if (this.filterAudience) p.audience_type = this.filterAudience;
+    if (this.searchText) p.search = this.searchText;
+
+
+    this.svc.list(p).subscribe({
       next: (r: any) => { this.surveys.set(r.data ?? r); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
@@ -971,6 +1399,14 @@ export class SurveyListComponent implements OnInit {
       start_date: s.start_date ?? '', end_date: s.end_date ?? '',
       allow_anonymous: false, send_reminder: false, reminder_days: 3,
       thank_you_message: 'Thank you for your valuable feedback!',
+      logo_url:           s.logo_url           ?? '',
+      background_color:   s.background_color   ?? '#0f172a',
+      background_image:   s.background_image   ?? '',
+      primary_color:      s.primary_color      ?? '#0ea5e9',
+      header_text_color:  s.header_text_color  ?? '#f1f5f9',
+      card_color:         s.card_color         ?? '#1e293b',
+      font_family:        s.font_family        ?? 'system',
+      language:           s.language           ?? 'en',
     };
     this.questions = [];
     this.selectedClientIds.set([]);   // reset; will be populated below from client_ids
@@ -1086,21 +1522,39 @@ export class SurveyListComponent implements OnInit {
   addOption(questionIndex: number): void {
     const q = this.questions[questionIndex];
     if (!q.options) q.options = [];
-    q.options = [...q.options, ''];
+    q.options.push('');   // mutate in-place — preserves focus context
+    // Auto-focus the new input after Angular renders it
+    setTimeout(() => {
+      const blocks = document.querySelectorAll('.q-block');
+      const block  = blocks[questionIndex];
+      if (!block) return;
+      const inputs = block.querySelectorAll<HTMLInputElement>('.q-opt-inp');
+      const last   = inputs[inputs.length - 1];
+      if (last) last.focus();
+    }, 30);
   }
 
   updateOption(questionIndex: number, optionIndex: number, value: string): void {
     const q = this.questions[questionIndex];
     if (!q.options) return;
-    const opts = [...q.options];
-    opts[optionIndex] = value;
-    q.options = opts;
+    // Mutate in-place — do NOT recreate the array reference
+    // Recreating the array causes *ngFor to destroy/recreate DOM nodes → focus lost
+    q.options[optionIndex] = value;
   }
 
   removeOption(questionIndex: number, optionIndex: number): void {
     const q = this.questions[questionIndex];
     if (!q.options) return;
-    q.options = q.options.filter((_: string, i: number) => i !== optionIndex);
+    q.options.splice(optionIndex, 1);  // mutate in-place
+    // Focus previous input after removal
+    setTimeout(() => {
+      const blocks = document.querySelectorAll('.q-block');
+      const block  = blocks[questionIndex];
+      if (!block) return;
+      const inputs = block.querySelectorAll<HTMLInputElement>('.q-opt-inp');
+      const target = inputs[Math.max(0, optionIndex - 1)];
+      if (target) target.focus();
+    }, 30);
   }
   removeQuestion(i: number): void { this.questions.splice(i, 1); }
 
@@ -1177,7 +1631,7 @@ export class SurveyListComponent implements OnInit {
     this.currentPage = 1;
   }
 
-  resetPage(): void { this.currentPage = 1; }
+  resetPage(): void { this.currentPage = 1;  this.load();    }
 
   onBackdrop(e: MouseEvent, fn: () => void): void {
     if ((e.target as HTMLElement).classList.contains('backdrop')) fn();
@@ -1187,6 +1641,8 @@ export class SurveyListComponent implements OnInit {
     if (!dist) return [];
     return Object.entries(dist).map(([key, val]) => ({ key, val: Number(val) }));
   }
+
+  trackByIndex(index: number): number { return index; }
 
   getQuestion(questionId: number): string {
     const q = this.viewQuestions().find(q => q.id === questionId);
@@ -1199,6 +1655,9 @@ export class SurveyListComponent implements OnInit {
       department_id: '', start_date: '', end_date: '',
       allow_anonymous: false, send_reminder: false, reminder_days: 3,
       thank_you_message: 'Thank you for your valuable feedback!',
+      logo_url: '', background_color: '#0f172a', background_image: '',
+      primary_color: '#0ea5e9', header_text_color: '#f1f5f9',
+      card_color: '#1e293b', font_family: 'system', language: 'en',
     };
   }
 }
