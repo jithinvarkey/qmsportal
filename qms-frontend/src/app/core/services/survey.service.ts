@@ -107,6 +107,16 @@ export class SurveyService {
     return this.api.get(`/surveys/${id}/tokens`);
   }
 
+  // ── File upload ────────────────────────────────────────────────────────────
+
+  /**
+   * Upload a branding image (logo or background).
+   * @param formData FormData with 'file' and 'type' (logo|background)
+   */
+  uploadMedia(formData: FormData): Observable<any> {
+    return this.api.post('/surveys/upload-media', formData);
+  }
+
   // ── Dropdown helpers ───────────────────────────────────────────────────────
 
   users(): Observable<any> {

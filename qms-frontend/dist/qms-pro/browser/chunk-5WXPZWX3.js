@@ -1,0 +1,1 @@
+import{U as o,m as e}from"./chunk-XPONOZBD.js";var c=(()=>{class t{constructor(){this._openNewForm=new e,this.openNewForm$=this._openNewForm.asObservable()}triggerNewForm(){this._openNewForm.next()}static{this.\u0275fac=function(r){return new(r||t)}}static{this.\u0275prov=o({token:t,factory:t.\u0275fac,providedIn:"root"})}}return t})();export{c as a};

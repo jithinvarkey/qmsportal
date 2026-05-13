@@ -73,26 +73,34 @@ class SurveyController extends BaseController {
 
     public function store(Request $request): JsonResponse {
         $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'audience_type' => 'required|in:internal,customer',
-            'type' => 'required|in:csat,nps,general,post_visit,post_service',
-            'department_id' => 'required_if:audience_type,internal|nullable|exists:departments,id',
-            'client_id' => 'nullable|exists:clients,id',
-            'client_ids' => 'nullable|array',
-            'client_ids.*' => 'exists:clients,id',
-            'visit_id' => 'nullable|exists:visits,id',
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date|after_or_equal:start_date',
-            'allow_anonymous' => 'boolean',
-            'send_reminder' => 'boolean',
-            'reminder_days' => 'nullable|integer|min:1|max:30',
-            'thank_you_message' => 'nullable|string|max:500',
-            'questions' => 'nullable|array',
-            'questions.*.question' => 'required_with:questions|string',
-            'questions.*.type' => 'required_with:questions|in:rating,nps,text,single_choice,multi_choice,yes_no',
-            'questions.*.options' => 'nullable|array',
-            'questions.*.scale_max' => 'nullable|integer|min:2|max:10',
+            'title'            => 'required|string|max:255',
+            'description'      => 'nullable|string',
+            'audience_type'    => 'required|in:internal,customer',
+            'type'             => 'required|in:csat,nps,general,post_visit,post_service',
+            'department_id'    => 'required_if:audience_type,internal|nullable|exists:departments,id',
+            'client_id'        => 'nullable|exists:clients,id',
+            'client_ids'       => 'nullable|array',
+            'client_ids.*'     => 'exists:clients,id',
+            'visit_id'         => 'nullable|exists:visits,id',
+            'start_date'       => 'nullable|date',
+            'end_date'         => 'nullable|date|after_or_equal:start_date',
+            'allow_anonymous'  => 'boolean',
+            'send_reminder'    => 'boolean',
+            'reminder_days'    => 'nullable|integer|min:1|max:30',
+            'thank_you_message'=> 'nullable|string|max:500',
+            'logo_url'          => 'nullable|string|max:500',
+            'background_color'  => 'nullable|string|max:20',
+            'background_image'  => 'nullable|string|max:500',
+            'primary_color'     => 'nullable|string|max:20',
+            'header_text_color' => 'nullable|string|max:20',
+            'card_color'        => 'nullable|string|max:20',
+            'font_family'       => 'nullable|in:system,serif,mono',
+            'language'          => 'nullable|in:en,ar',
+            'questions'        => 'nullable|array',
+            'questions.*.question'    => 'required_with:questions|string',
+            'questions.*.type'        => 'required_with:questions|in:rating,nps,text,single_choice,multi_choice,yes_no',
+            'questions.*.options'     => 'nullable|array',
+            'questions.*.scale_max'   => 'nullable|integer|min:2|max:10',
             'questions.*.is_required' => 'boolean',
         ]);
 
@@ -188,18 +196,25 @@ class SurveyController extends BaseController {
         $survey = Survey::findOrFail((int) $id);
 
         $request->validate([
-            'title' => 'sometimes|required|string|max:255',
-            'description' => 'nullable|string',
-            'audience_type' => 'sometimes|in:internal,customer',
-            'type' => 'sometimes|in:csat,nps,general,post_visit,post_service',
-            'department_id' => 'nullable|exists:departments,id',
-            'client_id' => 'nullable|exists:clients,id',
-            'client_ids' => 'nullable|array',
-            'client_ids.*' => 'exists:clients,id',
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
-            'status' => 'nullable|in:draft,active,paused,closed',
-            'thank_you_message' => 'nullable|string|max:500',
+            'title'            => 'sometimes|required|string|max:255',
+            'description'      => 'nullable|string',
+            'audience_type'    => 'sometimes|in:internal,customer',
+            'type'             => 'sometimes|in:csat,nps,general,post_visit,post_service',
+            'department_id'    => 'nullable|exists:departments,id',
+            'client_id'        => 'nullable|exists:clients,id',
+            'client_ids'       => 'nullable|array',
+            'client_ids.*'     => 'exists:clients,id',
+            'start_date'       => 'nullable|date',
+            'end_date'         => 'nullable|date',
+            'status'           => 'nullable|in:draft,active,paused,closed',
+            'thank_you_message'=> 'nullable|string|max:500',
+            'logo_url'          => 'nullable|string|max:500',
+            'background_color'  => 'nullable|string|max:20',
+            'background_image'  => 'nullable|string|max:500',
+            'primary_color'     => 'nullable|string|max:20',
+            'header_text_color' => 'nullable|string|max:20',
+            'card_color'        => 'nullable|string|max:20',
+            'font_family'       => 'nullable|in:system,serif,mono',
         ]);
 
         // Resolve client_ids from multi-select
@@ -582,6 +597,32 @@ class SurveyController extends BaseController {
     // =========================================================================
 
     /**
+     * Upload a survey branding image (logo or background).
+     * Route: POST /api/surveys/upload-media
+     *
+     * Returns the public URL of the stored file.
+     */
+    public function uploadMedia(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => 'required|file|image|max:2048|mimes:jpeg,jpg,png,gif,webp,svg',
+            'type' => 'required|in:logo,background',
+        ]);
+
+        $file   = $request->file('file');
+        $folder = 'surveys/' . $request->type;
+        $name   = uniqid($request->type . '_') . '.' . $file->getClientOriginalExtension();
+
+        // Store in public disk so it's web-accessible
+        $path = $file->storeAs($folder, $name, 'public');
+
+        return $this->success([
+            'url'  => asset('storage/' . $path),
+            'path' => $path,
+        ], 'File uploaded successfully');
+    }
+
+    /**
      * Show survey form for a customer (via token link).
      * Route: GET /api/survey-public/{token}
      */
@@ -612,13 +653,23 @@ class SurveyController extends BaseController {
                         'id' => $survey->id,
                         'title' => $survey->title,
                         'description' => $survey->description,
-                        'type' => $survey->type,
-                        'questions' => $survey->questions->map(fn($q) => [
-                            'id' => $q->id,
-                            'question' => $q->question,
-                            'type' => $q->type,
-                            'options' => $q->options,
-                            'scale_max' => $q->scale_max,
+                'type'        => $survey->type,
+                'branding'    => [
+                    'logo_url'          => $survey->logo_url,
+                    'background_color'  => $survey->background_color ?? '#0f172a',
+                    'background_image'  => $survey->background_image,
+                    'primary_color'     => $survey->primary_color ?? '#0ea5e9',
+                    'header_text_color' => $survey->header_text_color ?? '#f1f5f9',
+                    'card_color'        => $survey->card_color ?? '#1e293b',
+                    'font_family'       => $survey->font_family ?? 'system',
+                    'language'          => $survey->language ?: 'en',
+                ],
+            'questions'   => $survey->questions->map(fn ($q) => [
+                    'id'          => $q->id,
+                    'question'    => $q->question,
+                    'type'        => $q->type,
+                    'options'     => $q->options,
+                    'scale_max'   => $q->scale_max,
                             'is_required' => $q->is_required,
                             'sort_order' => $q->sort_order,
                                 ]),

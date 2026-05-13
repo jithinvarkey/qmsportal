@@ -4,7 +4,6 @@ import {
   Component,
   OnDestroy,
   OnInit,
-  computed,
   inject,
   signal,
 } from '@angular/core';
@@ -32,7 +31,6 @@ interface Branding {
   header_text_color: string;
   card_color: string;
   font_family: string;
-  language: string;
 }
 
 interface SurveyData {
@@ -59,33 +57,31 @@ interface SurveyData {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="survey-page"
-         [attr.dir]="isRtl() ? 'rtl' : 'ltr'"
-         [attr.lang]="branding().language"
          [style.background-color]="branding().background_color"
          [style.background-image]="branding().background_image ? 'url(' + branding().background_image + ')' : 'none'"
          [style.background-size]="'cover'"
          [style.background-position]="'center'"
-         [style.font-family]="isRtl() ? 'Tajawal, Cairo, Noto Sans Arabic, Arial, sans-serif' : (branding().font_family === 'serif' ? 'Georgia, serif' : branding().font_family === 'mono' ? 'monospace' : 'system-ui, sans-serif')">
+         [style.font-family]="branding().font_family === 'serif' ? 'Georgia, serif' : branding().font_family === 'mono' ? 'monospace' : 'system-ui, sans-serif'">
       <div class="survey-wrapper">
 
         <!-- Loading -->
         <div class="survey-loading" *ngIf="loading()">
           <div class="spinner"></div>
-          <p>{{ isRtl() ? "جارٍ تحميل الاستبيان…" : "Loading survey…" }}</p>
+          <p>Loading survey…</p>
         </div>
 
         <!-- Error / Expired -->
         <div class="survey-error-card" *ngIf="errorMessage() && !loading()">
           <div class="error-icon">⚠️</div>
           <h2>{{ errorMessage() }}</h2>
-          <p class="error-sub">{{ isRtl() ? "إذا كنت تعتقد أن هذا خطأ، يرجى التواصل مع Diamond Insurance Brokers." : "If you believe this is an error, please contact Diamond Insurance Brokers." }}</p>
+          <p class="error-sub">If you believe this is an error, please contact Diamond Insurance Brokers.</p>
         </div>
 
         <!-- Thank You (submitted) -->
         <div class="survey-thanks" *ngIf="submitted() && !loading()">
           <div class="thanks-icon">✅</div>
-          <h2>{{ isRtl() ? "شكراً جزيلاً على ملاحظاتك!" : "Thank you for your feedback!" }}</h2>
-          <p>{{ isRtl() ? "تم تسجيل إجابتك وستساعدنا في تحسين خدمتنا." : "Your response has been recorded and will help us improve our service." }}</p>
+          <h2>Thank you for your feedback!</h2>
+          <p>Your response has been recorded and will help us improve our service.</p>
           <p class="thanks-company">— Diamond Insurance Brokers Quality Team</p>
         </div>
 
@@ -100,7 +96,7 @@ interface SurveyData {
             </div>
             <h1 class="survey-title" [style.color]="branding().header_text_color">{{ survey()!.title }}</h1>
             <p class="survey-desc" *ngIf="survey()!.description">{{ survey()!.description }}</p>
-            <p class="survey-greeting" *ngIf="recipientName">{{ isRtl() ? "مرحباً،" : "Hello," }} <strong>{{ recipientName }}</strong></p>
+            <p class="survey-greeting" *ngIf="recipientName">Hello, <strong>{{ recipientName }}</strong></p>
           </div>
 
           <!-- Questions -->
@@ -112,7 +108,7 @@ interface SurveyData {
               <div class="question-label">
                 <span class="q-num">{{ i + 1 }}</span>
                 {{ q.question }}
-                <span class="required-dot" *ngIf="q.is_required" [attr.title]="isRtl() ? 'مطلوب' : 'Required'">*</span>
+                <span class="required-dot" *ngIf="q.is_required" title="Required">*</span>
               </div>
 
               <!-- Rating (star scale) -->
@@ -133,8 +129,8 @@ interface SurveyData {
               <!-- NPS (0–10) -->
               <div class="nps-row" *ngIf="q.type === 'nps'">
                 <div class="nps-labels">
-                  <span>{{ isRtl() ? "غير محتمل" : "Not likely" }}</span>
-                  <span>{{ isRtl() ? "محتمل جداً" : "Extremely likely" }}</span>
+                  <span>Not likely</span>
+                  <span>Extremely likely</span>
                 </div>
                 <div class="nps-buttons">
                   <button
@@ -153,8 +149,8 @@ interface SurveyData {
 
               <!-- Yes/No -->
               <div class="yesno-row" *ngIf="q.type === 'yes_no'">
-                <button class="yn-btn" [class.active]="answers[q.id]?.answer === 'yes'" (click)="setAnswer(q.id, 'yes')">👍 {{ isRtl() ? "نعم" : "Yes" }}</button>
-                <button class="yn-btn" [class.active]="answers[q.id]?.answer === 'no'"  (click)="setAnswer(q.id, 'no')">👎 {{ isRtl() ? "لا" : "No" }}</button>
+                <button class="yn-btn" [class.active]="answers[q.id]?.answer === 'yes'" (click)="setAnswer(q.id, 'yes')">👍 Yes</button>
+                <button class="yn-btn" [class.active]="answers[q.id]?.answer === 'no'"  (click)="setAnswer(q.id, 'no')">👎 No</button>
               </div>
 
               <!-- Single choice -->
@@ -180,15 +176,14 @@ interface SurveyData {
                 *ngIf="q.type === 'text'"
                 class="text-answer"
                 rows="3"
-[attr.dir]="isRtl() ? 'rtl' : 'ltr'"
-                [placeholder]="isRtl() ? (q.is_required ? 'إجابتك (مطلوب)…' : 'إجابتك (اختياري)…') : (q.is_required ? 'Your answer (required)…' : 'Your answer (optional)…')"
+                [placeholder]="q.is_required ? 'Your answer (required)…' : 'Your answer (optional)…'"
                 [(ngModel)]="textAnswers[q.id]"
                 (input)="setAnswer(q.id, textAnswers[q.id])"
                 maxlength="2000">
               </textarea>
 
               <!-- Validation error -->
-              <div class="q-error" *ngIf="validationErrors[q.id]" [attr.dir]="isRtl() ? 'rtl' : 'ltr'">
+              <div class="q-error" *ngIf="validationErrors[q.id]">
                 {{ validationErrors[q.id] }}
               </div>
 
@@ -197,22 +192,22 @@ interface SurveyData {
 
           <!-- Comments -->
           <div class="comments-block">
-            <label class="question-label">{{ isRtl() ? "هل لديك تعليقات إضافية؟" : "Any additional comments?" }} <span class="optional">{{ isRtl() ? "(اختياري)" : "(optional)" }}</span></label>
-            <textarea class="text-answer" rows="3" [(ngModel)]="comments" [attr.dir]="isRtl() ? 'rtl' : 'ltr'" [placeholder]="isRtl() ? 'ملاحظات إضافية…' : 'Additional feedback…'" maxlength="2000"></textarea>
+            <label class="question-label">Any additional comments? <span class="optional">(optional)</span></label>
+            <textarea class="text-answer" rows="3" [(ngModel)]="comments" placeholder="Additional feedback…" maxlength="2000"></textarea>
           </div>
 
           <!-- Submit error -->
-          <div class="submit-error" *ngIf="submitError()" [attr.dir]="isRtl() ? 'rtl' : 'ltr'">⚠️ {{ submitError() }}</div>
+          <div class="submit-error" *ngIf="submitError()">⚠️ {{ submitError() }}</div>
 
           <!-- Submit button -->
           <div class="submit-row">
             <button class="btn-submit" (click)="submit()" [disabled]="submitting()" [style.background]="branding().primary_color">
-              <span *ngIf="submitting()">⏳ {{ isRtl() ? "جارٍ الإرسال…" : "Submitting…" }}</span>
-              <span *ngIf="!submitting()">{{ isRtl() ? "← إرسال الاستجابة" : "Submit Feedback →" }}</span>
+              <span *ngIf="submitting()">⏳ Submitting…</span>
+              <span *ngIf="!submitting()">Submit Feedback →</span>
             </button>
           </div>
 
-          <p class="survey-footer">Diamond Insurance Brokers — {{ isRtl() ? "نظام إدارة الجودة" : "Quality Management System" }}</p>
+          <p class="survey-footer">Diamond Insurance Brokers — Quality Management System</p>
         </div>
 
       </div>
@@ -471,49 +466,6 @@ interface SurveyData {
     padding: 1rem;
   }
 }
-    /* == RTL / Arabic support ================================================ */
-    [dir="rtl"] .survey-header,
-    [dir="rtl"] .questions-list,
-    [dir="rtl"] .comments-block,
-    [dir="rtl"] .submit-row,
-    [dir="rtl"] .survey-footer { text-align: right; }
-
-    [dir="rtl"] .question-label { flex-direction: row-reverse; }
-    [dir="rtl"] .q-num          { margin-right: 0; margin-left: 0; }
-    [dir="rtl"] .required-dot   { margin-left: 0; margin-right: 2px; }
-
-    [dir="rtl"] .rating-row {
-      padding-left: 0; padding-right: 2rem; flex-direction: row-reverse;
-    }
-    [dir="rtl"] .rating-label { margin-left: 0; margin-right: 0.5rem; }
-
-    [dir="rtl"] .nps-row     { padding-left: 0; padding-right: 2rem; }
-    [dir="rtl"] .nps-labels  { flex-direction: row-reverse; }
-    [dir="rtl"] .nps-buttons { flex-direction: row-reverse; }
-
-    [dir="rtl"] .yesno-row {
-      padding-left: 0; padding-right: 2rem; flex-direction: row-reverse;
-    }
-
-    [dir="rtl"] .choice-list { padding-left: 0; padding-right: 2rem; }
-    [dir="rtl"] .choice-item { flex-direction: row-reverse; }
-    [dir="rtl"] .no-options  { text-align: right; }
-
-    [dir="rtl"] .text-answer  { text-align: right; direction: rtl; }
-    [dir="rtl"] .q-error      { padding-left: 0; padding-right: 2rem; text-align: right; }
-    [dir="rtl"] .submit-error { text-align: right; }
-
-    [dir="rtl"] .survey-greeting,
-    [dir="rtl"] .survey-desc { text-align: right; }
-
-    [dir="rtl"] .survey-logo-wrap { text-align: right; }
-
-    [dir="rtl"] .survey-loading,
-    [dir="rtl"] .survey-error-card,
-    [dir="rtl"] .survey-thanks { direction: rtl; }
-
-    [dir="rtl"] .nps-btn { direction: ltr; /* keep numbers LTR inside RTL */ }
-
   `],
 })
 export class SurveyPublicComponent implements OnInit, OnDestroy {
@@ -526,9 +478,8 @@ export class SurveyPublicComponent implements OnInit, OnDestroy {
   readonly branding   = signal<Branding>({
     logo_url: null, background_color: '#0f172a', background_image: null,
     primary_color: '#0ea5e9', header_text_color: '#f1f5f9',
-    card_color: '#1e293b', font_family: 'system', language: 'en',
+    card_color: '#1e293b', font_family: 'system',
   });
-  readonly isRtl      = computed(() => this.branding().language === 'ar');
   readonly submitted  = signal(false);
   readonly submitting = signal(false);
   readonly survey     = signal<SurveyData | null>(null);
@@ -563,21 +514,9 @@ export class SurveyPublicComponent implements OnInit, OnDestroy {
           header_text_color: branding?.header_text_color || '#f1f5f9',
           card_color:        branding?.card_color        || '#1e293b',
           font_family:       branding?.font_family       || 'system',
-          language:          branding?.language          || 'en',
         });
 
-        // Load Arabic Google Font dynamically
-        if ((branding?.language || 'en') === 'ar') {
-          const link = document.createElement('link');
-          link.rel  = 'stylesheet';
-          link.href = 'https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&family=Cairo:wght@400;700&display=swap';
-          if (!document.head.querySelector('link[href*="Tajawal"]')) {
-            document.head.appendChild(link);
-          }
-        }
-
-        const rn = d?.recipient_name;
-        this.recipientName = (rn && rn !== 'NULL' && rn !== 'null') ? rn : '';
+        this.recipientName = d?.recipient_name ?? '';
 
         // Initialise answers map
         ((survey.questions ?? []) as SurveyQuestion[]).forEach((q: SurveyQuestion) => {
@@ -649,13 +588,13 @@ export class SurveyPublicComponent implements OnInit, OnDestroy {
         (q.type === 'text' && !this.textAnswers[q.id]?.trim());
 
       if (isEmpty) {
-        this.validationErrors[q.id] = this.isRtl() ? 'هذا السؤال مطلوب.' : 'This question is required.';
+        this.validationErrors[q.id] = 'This question is required.';
         valid = false;
       }
     }
 
     if (!valid) {
-      this.submitError.set(this.isRtl() ? 'يرجى الإجابة على جميع الأسئلة المطلوبة قبل الإرسال.' : 'Please answer all required questions before submitting.');
+      this.submitError.set('Please answer all required questions before submitting.');
       return;
     }
 
@@ -683,7 +622,7 @@ export class SurveyPublicComponent implements OnInit, OnDestroy {
       },
       error: (e: any) => {
         this.submitting.set(false);
-        this.submitError.set(e?.error?.message ?? (this.isRtl() ? 'فشل الإرسال. يرجى المحاولة مرة أخرى.' : 'Submission failed. Please try again.'));
+        this.submitError.set(e?.error?.message ?? 'Submission failed. Please try again.');
       },
     });
   }
